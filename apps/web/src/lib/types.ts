@@ -747,3 +747,100 @@ export interface AdminPaymentDetail {
   refunds: PaymentRefundRecord[];
   webhookEvents: PaymentWebhookEvent[];
 }
+
+export interface SupplierFulfillmentSummary {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  fulfillmentReference: string;
+  status: string;
+  subtotal: number;
+  taxTotal: number;
+  deliveryAllocation: number;
+  total: number;
+  packageCount: number;
+  itemCount: number;
+  buyerTradeName: string;
+  deliveryLocality: string | null;
+  deliveryCity: string | null;
+  deliverySlotName: string | null;
+  acceptedAt: string | null;
+  packedAt: string | null;
+  readyAt: string | null;
+  collectedAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+}
+
+export interface SupplierFulfillmentDetailItem {
+  id: string;
+  orderItemId: string;
+  productId: string;
+  productName: string;
+  dosageForm: string;
+  packSize: string | null;
+  sku: string | null;
+  batchNumber: string | null;
+  expiryDate: string | null;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+  status: string;
+  shortPickedQuantity: number;
+}
+
+export interface SupplierFulfillmentPackage {
+  id: string;
+  packageCode: string;
+  status: string;
+  packageType: string;
+  weightGrams: number | null;
+  sealNumber: string | null;
+  handlingNotes: string | null;
+  pickupTaskId: string | null;
+  collectedAt: string | null;
+  createdAt: string;
+}
+
+export interface SupplierFulfillmentTimeline {
+  id: string;
+  fromStatus: string | null;
+  toStatus: string;
+  reason: string | null;
+  actorType: string;
+  createdAt: string;
+}
+
+export interface SupplierFulfillmentPickupTask {
+  id: string;
+  taskCode: string;
+  status: string;
+  priority: string;
+  pickupWindowStart: string | null;
+  pickupWindowEnd: string | null;
+  assignedPickerName: string | null;
+  assignedPickerPhone: string | null;
+  createdAt: string;
+}
+
+export interface SupplierFulfillmentDetail extends SupplierFulfillmentSummary {
+  buyer: {
+    id: string;
+    tradeName: string;
+    drugLicenceNumber: string | null;
+    contactPhone: string | null;
+  };
+  deliveryAddress: {
+    addressLine1: string;
+    addressLine2: string | null;
+    locality: string;
+    city: string;
+    state: string;
+    postalCode: string;
+  } | null;
+  items: SupplierFulfillmentDetailItem[];
+  packages: SupplierFulfillmentPackage[];
+  timeline: SupplierFulfillmentTimeline[];
+  pickupTask: SupplierFulfillmentPickupTask | null;
+}
+

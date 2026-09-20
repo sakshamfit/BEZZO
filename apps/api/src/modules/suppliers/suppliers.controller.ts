@@ -14,6 +14,8 @@ import {
   stockSetSchema,
   supplierDocumentSchema,
   supplierProfileSchema,
+  packFulfillmentSchema,
+  rejectFulfillmentSchema,
   type ListingCreateInput,
   type ListingUpdateInput,
   type StockAdjustInput,
@@ -21,6 +23,14 @@ import {
   type SupplierDocumentInput,
   type SupplierProfileInput,
 } from './suppliers.service';
+import type { PackFulfillmentInput } from '@bezzo/contracts';
+
+const fulfillmentQuerySchema = pagePaginationSchema.extend({
+  status: z.string().trim().max(50).optional(),
+  search: z.string().trim().max(120).optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+});
 
 const listingQuerySchema = pagePaginationSchema.extend({
   status: z.enum(['DRAFT', 'ACTIVE', 'PAUSED', 'OUT_OF_STOCK', 'SUSPENDED']).optional(),
@@ -192,5 +202,85 @@ export class SuppliersController {
     @Query(validate(pagePaginationSchema)) query: { page: number; pageSize: number },
   ) {
     return this.suppliers.listStockLedger(actor, inventoryId, query.page, query.pageSize);
+  }
+
+  /* ------------------------------- fulfillments ------------------------------ */
+
+  @Get('fulfillments')
+  @RequirePermissions(Permission.SUPPLIER_PROFILE_READ)
+  @ApiOperation({ summary: 'List supplier fulfillments / incoming orders with status filtering and search' })
+  async listFulfillments(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Query(validate(fulfillmentQuerySchema))
+    query: {
+      page: number;
+      pageSize: number;
+      status?: string;
+      search?: string;
+      fromDate?: string;
+      toDate?: string;
+    },
+  ) {
+    return this.suppliers.listFulfillments(actor, query);
+  }
+
+  @Get('fulfillments/:fulfillmentId')
+  @RequirePermissions(Permission.SUPPLIER_PROFILE_READ)
+  @ApiOperation({ summary: 'Get fulfillment detail with order items, packages, timeline and pickup task' })
+  async getFulfillment(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('fulfillmentId') fulfillmentId: string,
+  ) {
+    return this.suppliers.getFulfillment(actor, fulfillmentId);
+  }
+
+  @Post('fulfillments/:fulfillmentId/accept')
+  @Idempotent('supplier.fulfillment_accept')
+  @HttpCode(200)
+  @RequirePermissions(Permission.SUPPLIER_FULFILLMENT_WRITE)
+  @ApiOperation({ summary: 'Accept incoming order / fulfillment' })
+  async acceptFulfillment(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('fulfillmentId') fulfillmentId: string,
+  ) {
+    return this.suppliers.acceptFulfillment(actor, fulfillmentId);
+  }
+
+  @Post('fulfillments/:fulfillmentId/pack')
+  @Idempotent('supplier.fulfillment_pack')
+  @HttpCode(200)
+  @RequirePermissions(Permission.SUPPLIER_FULFILLMENT_WRITE)
+  @ApiOperation({ summary: 'Pack order items and register physical packages' })
+  async packFulfillment(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('fulfillmentId') fulfillmentId: string,
+    @Body(validate(packFulfillmentSchema)) body: PackFulfillmentInput,
+  ) {
+    return this.suppliers.packFulfillment(actor, fulfillmentId, body);
+  }
+
+  @Post('fulfillments/:fulfillmentId/ready')
+  @Idempotent('supplier.fulfillment_ready')
+  @HttpCode(200)
+  @RequirePermissions(Permission.SUPPLIER_FULFILLMENT_WRITE)
+  @ApiOperation({ summary: 'Mark fulfillment ready for pickup and dispatch pickup task for collection' })
+  async readyFulfillment(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('fulfillmentId') fulfillmentId: string,
+  ) {
+    return this.suppliers.readyFulfillment(actor, fulfillmentId);
+  }
+
+  @Post('fulfillments/:fulfillmentId/reject')
+  @Idempotent('supplier.fulfillment_reject')
+  @HttpCode(200)
+  @RequirePermissions(Permission.SUPPLIER_FULFILLMENT_WRITE)
+  @ApiOperation({ summary: 'Reject fulfillment and release reserved inventory units' })
+  async rejectFulfillment(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('fulfillmentId') fulfillmentId: string,
+    @Body(validate(rejectFulfillmentSchema)) body: { reason: string },
+  ) {
+    return this.suppliers.rejectFulfillment(actor, fulfillmentId, body.reason);
   }
 }

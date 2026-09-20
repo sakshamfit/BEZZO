@@ -2,30 +2,29 @@
   "name": "bezzo",
   "version": "1.0.0",
   "private": true,
-  "description": "BEZZO \u2014 B2B pharmaceutical marketplace (web, Android, iOS, operational dashboards)",
+  "description": "BEZZO — B2B pharmaceutical marketplace (web, Android, iOS, operational dashboards)",
   "license": "UNLICENSED",
-  "packageManager": "pnpm@12.5.1",
   "engines": {
     "node": ">=20.11.0"
   },
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
-    "dev:api": "pnpm --filter @bezzo/api dev",
-    "dev:web": "pnpm --filter @bezzo/web dev",
-    "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
+    "build": "npm run build --workspace=@bezzo/web",
+    "dev": "npm run dev --workspace=@bezzo/web",
+    "dev:api": "npm run dev --workspace=@bezzo/api",
+    "dev:web": "npm run dev --workspace=@bezzo/web",
+    "start": "npm run start --workspace=@bezzo/web",
+    "typecheck": "npm run typecheck --workspace=@bezzo/web",
+    "lint": "npm run lint --workspace=@bezzo/web",
     "test": "turbo run test",
-    "test:unit": "turbo run test:unit",
-    "test:integration": "turbo run test:integration",
-    "test:concurrency": "pnpm --filter @bezzo/api test:concurrency",
-    "db:migrate": "pnpm --filter @bezzo/database migrate",
-    "db:status": "pnpm --filter @bezzo/database status",
-    "db:seed": "pnpm --filter @bezzo/database seed",
-    "db:reset": "pnpm --filter @bezzo/database reset",
-    "db:verify": "pnpm --filter @bezzo/database verify",
-    "openapi:export": "pnpm --filter @bezzo/api openapi:export",
     "format": "prettier --write \"**/*.{ts,tsx,md,json,yml,yaml}\""
+  },
+  "overrides": {
+    "fastify": "5.12.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

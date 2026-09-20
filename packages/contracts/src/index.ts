@@ -17,4 +17,5 @@ export * from './dto/identity';
 export * from './dto/marketplace';
 export * from './dto/picker';
 export * from './dto/admin';
+export * from './dto/fulfillment';
 export * from './config/operational-config';

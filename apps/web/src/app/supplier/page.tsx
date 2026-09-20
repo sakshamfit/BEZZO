@@ -90,12 +90,25 @@ export default function SupplierWorkspacePage() {
 
   return (
     <section className="stack" style={{ gap: 'var(--space-5)' }}>
-      <header className="stack" style={{ gap: 4 }}>
-        <h1 style={{ margin: 0 }}>{profile?.displayName ?? 'Supplier workspace'}</h1>
-        <p className="muted small" style={{ margin: 0 }}>
-          {profile?.legalName} ·{' '}
-          {[profile?.locality, profile?.city, profile?.state].filter(Boolean).join(', ') || 'pickup address not set'}
-        </p>
+      <header className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <h1 style={{ margin: 0 }}>{profile?.displayName ?? 'Supplier workspace'}</h1>
+          <p className="muted small" style={{ margin: 0 }}>
+            {profile?.legalName} ·{' '}
+            {[profile?.locality, profile?.city, profile?.state].filter(Boolean).join(', ') || 'pickup address not set'}
+          </p>
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <Link className="btn primary small" href="/supplier/fulfillments">
+            Orders & Fulfillment →
+          </Link>
+          <Link className="btn secondary small" href="/supplier/inventory">
+            Inventory
+          </Link>
+          <Link className="btn secondary small" href="/supplier/listings">
+            Listings
+          </Link>
+        </div>
       </header>
 
       {error && (
@@ -240,7 +253,12 @@ export default function SupplierWorkspacePage() {
       </div>
 
       <div className="card stack">
-        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>How fulfilment works for you</h2>
+        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>How fulfilment works for you</h2>
+          <Link className="btn primary small" href="/supplier/fulfillments">
+            Open Fulfillment Workbench →
+          </Link>
+        </div>
         <p className="small muted" style={{ margin: 0 }}>
           An order from a retailer becomes one <strong>fulfilment</strong> per supplier. You prepare and pack
           that fulfilment; a BEZZO <strong>picker</strong> then collects it from this pickup address and takes

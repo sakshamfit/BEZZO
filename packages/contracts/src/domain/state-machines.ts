@@ -151,9 +151,19 @@ export const ORDER_STATUS_TRANSITIONS: TransitionMap<OrderStatus> = {
 };
 
 export const FULFILLMENT_STATUS_TRANSITIONS: TransitionMap<FulfillmentStatus> = {
-  CREATED: [FulfillmentStatus.ALLOCATING, FulfillmentStatus.CANCELLED],
+  CREATED: [
+    FulfillmentStatus.ALLOCATING,
+    FulfillmentStatus.ALLOCATED,
+    FulfillmentStatus.PICKING,
+    FulfillmentStatus.CANCELLED,
+  ],
   ALLOCATING: [FulfillmentStatus.ALLOCATED, FulfillmentStatus.FAILED, FulfillmentStatus.CANCELLED],
-  ALLOCATED: [FulfillmentStatus.PICKING, FulfillmentStatus.FAILED, FulfillmentStatus.CANCELLED],
+  ALLOCATED: [
+    FulfillmentStatus.PICKING,
+    FulfillmentStatus.PACKED,
+    FulfillmentStatus.FAILED,
+    FulfillmentStatus.CANCELLED,
+  ],
   PICKING: [FulfillmentStatus.PACKED, FulfillmentStatus.FAILED, FulfillmentStatus.CANCELLED],
   PACKED: [FulfillmentStatus.READY_FOR_PICKUP, FulfillmentStatus.CANCELLED],
   // Bezzo collection flow (ADR-0004): ready → offered/assigned → collected → hub → delivery

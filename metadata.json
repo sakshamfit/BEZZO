@@ -1,0 +1,6 @@
+{
+  "name": "BEZZO",
+  "description": "B2B pharmaceutical marketplace connecting verified wholesalers with verified medical stores",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

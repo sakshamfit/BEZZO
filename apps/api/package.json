@@ -18,10 +18,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@bezzo/config": "workspace:*",
-    "@bezzo/contracts": "workspace:*",
-    "@bezzo/crypto": "workspace:*",
-    "@bezzo/database": "workspace:*",
+    "@bezzo/config": "*",
+    "@bezzo/contracts": "*",
+    "@bezzo/crypto": "*",
+    "@bezzo/database": "*",
     "@fastify/cors": "^10.0.1",
     "@fastify/helmet": "^13.0.1",
     "@fastify/static": "^10.1.4",

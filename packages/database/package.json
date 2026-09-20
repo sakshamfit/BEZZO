@@ -21,9 +21,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@bezzo/config": "workspace:*",
-    "@bezzo/contracts": "workspace:*",
-    "@bezzo/crypto": "workspace:*",
+    "@bezzo/config": "*",
+    "@bezzo/contracts": "*",
+    "@bezzo/crypto": "*",
     "pg": "^8.13.1"
   },
   "devDependencies": {

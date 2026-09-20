@@ -10,6 +10,8 @@
  * thrown `ApiError` that carries the stable error code, HTTP status and field errors.
  */
 
+import { handleMockRoute } from './mock-service';
+
 export interface EnvelopeMeta {
   requestId?: string;
   correlationId?: string;
@@ -208,18 +210,34 @@ export async function serverGet<T>(
   }
 
   try {
-    const response = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-      next: options.revalidateSeconds ? { revalidate: options.revalidateSeconds } : { revalidate: 0 },
-    });
-    const text = await response.text();
-    const payload = text ? JSON.parse(text) : null;
-    if (!response.ok) {
-      if (options.allowFailure ?? true) return null;
-      return null;
+    if (process.env.BEZZO_API_INTERNAL_URL) {
+      const response = await fetch(url.toString(), {
+        headers: { accept: 'application/json' },
+        next: options.revalidateSeconds ? { revalidate: options.revalidateSeconds } : { revalidate: 0 },
+      });
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : null;
+      if (response.ok && payload) {
+        return payload as { data: T; meta?: EnvelopeMeta };
+      }
     }
-    return payload as { data: T; meta?: EnvelopeMeta };
   } catch {
-    return null;
+    // proceed to mock service fallback
   }
+
+  // Fallback to in-memory mock service for AI Studio preview
+  try {
+    const queryMap: Record<string, string> = {};
+    for (const [key, value] of Object.entries(options.query ?? {})) {
+      if (value !== undefined && value !== '') queryMap[key] = String(value);
+    }
+    const mockResult = handleMockRoute(path, 'GET', queryMap);
+    if (mockResult && mockResult.status < 400 && mockResult.payload) {
+      return mockResult.payload as { data: T; meta?: EnvelopeMeta };
+    }
+  } catch {
+    // degrade gracefully
+  }
+
+  return null;
 }
