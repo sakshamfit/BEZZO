@@ -48,6 +48,7 @@ import { BuyersModule } from './modules/buyers/buyers.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CartModule } from './modules/cart/cart.module';
+import { OrdersModule } from './modules/orders/orders.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkerModule } from './modules/workers/worker.module';
@@ -87,6 +88,7 @@ import { WorkerModule } from './modules/workers/worker.module';
     SuppliersModule,
     CatalogModule,
     CartModule,
+    OrdersModule,
     UsersModule,
     PlatformModule,
 

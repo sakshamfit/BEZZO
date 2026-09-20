@@ -51,9 +51,9 @@ Background workers are live: `job_runs` shows `outbox.dispatch`, `notifications.
 | 1 | Foundation: workspace, tooling, config, logging, migrations, health/metrics | **IMPLEMENTED** |
 | 2 | Identity & onboarding: auth, sessions, RBAC, buyer/supplier profiles, verification, documents | **IMPLEMENTED** (mobile OTP flows exist API-side; push delivery **REQUIRES EXTERNAL CREDENTIALS**) |
 | 3 | Catalogue & inventory: products, categories, manufacturers, listings, inventory + ledger | **IMPLEMENTED** |
-| 4 | Marketplace: cart (live-priced) … checkout / orders / payments | Cart **IMPLEMENTED**; checkout, orders, payments **NOT IMPLEMENTED** |
-| 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | **NOT IMPLEMENTED** (schema + state machines present) |
-| 6 | Payments: abstraction, server verification, webhooks, reconciliation | Provider abstraction + mock/razorpay adapters **IMPLEMENTED**; webhook endpoint **NOT IMPLEMENTED** |
+| 4 | Marketplace: cart, checkout, orders, payments | Cart + checkout + order placement/cancel **IMPLEMENTED**; payment capture/webhooks/refunds **NOT IMPLEMENTED** |
+| 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | Fulfillment records are created per supplier at order placement; supplier accept/pack/ready flows **NOT IMPLEMENTED** |
+| 6 | Payments: abstraction, server verification, webhooks, reconciliation | Provider abstraction + mock/razorpay adapters + payment intent creation at checkout **IMPLEMENTED**; webhook endpoint, capture and reconciliation **NOT IMPLEMENTED** |
 | 7 | Picker system: offers, atomic claim, runs, stops, package scans, hub receiving | **NOT IMPLEMENTED** (schema for the full flow is migrated) |
 | 8 | Delivery: hub → retailer, Porter adapter, slots, tracking | Logistics adapter **IMPLEMENTED**; delivery flow **NOT IMPLEMENTED** |
 | 9 | Admin / backoffice: verification queues, disputes, settlements, analytics | **NOT IMPLEMENTED** |
@@ -103,6 +103,8 @@ fallback), notifications (IN_APP guaranteed, unconfigured channels fail rather t
 | suppliers | profile, verification submit, documents, listings CRUD, inventory + adjust/set/ledger | supplier-only; every stock change writes an `inventory_transactions` row |
 | catalog | categories, manufacturers, dosage-forms, delivery-slots, products (search/filter/sort), products/suggest, products/:id | public read; product detail returns live offers with sellable quantity |
 | cart | GET cart, POST items, PATCH item, DELETE item, DELETE cart | implemented this session — see §5 |
+| checkout | POST checkout/quote | server-priced preview of the live basket, zero side effects |
+| orders | POST orders, GET orders, GET orders/:id, POST orders/:id/cancel | this session — see §5.2 |
 | users | notifications (+read/read-all), notification-preferences, devices | |
 | platform | `/health`, `/health/live`, `/health/ready`, `/metrics`, `/version`, `/` index | |
 
@@ -158,6 +160,28 @@ same idempotency key; role-aware navigation that is *not* a security boundary.
 9. **Docs**: `docs/01-local-development.md` gained the web-application, proxy and idempotency
    sections; this file was added as the project's implementation memory.
 
+### 5.2 Checkout & order placement (this session)
+
+The marketplace flow that turns a basket into a commitment, implemented as the `orders` module:
+
+- `POST /checkout/quote` validates the buyer, the address (ownership + active), the delivery mode
+  against the suppliers' service areas, the scheduled slot, and prices the live basket — read-only, so a
+  preview can never hold stock.
+- `POST /orders` (idempotent) reserves every line with the guarded update
+  `available_quantity - reserved_quantity >= :quantity`, creates the order with a database-generated
+  customer number (`BZ-2026-000001`), immutable line snapshots, **one fulfillment per supplier**, one
+  `inventory_reservations` row per line, the payment row and an auditable `checkout_sessions` record,
+  then closes the cart (`CONVERTED`). Events `OrderCreated` / `OrderConfirmed` and audit entries are
+  written in the same transaction.
+- The gateway call happens **after** the commit. A provider failure is recorded on the payment and
+  returned with the order rather than thrown — reporting a failed order that actually exists would be
+  a lie, and it would leave the buyer unable to pay.
+- `POST /orders/:id/cancel` is restricted to states that still allow it, rejects paid orders (a refund
+  is the correct command), releases reservations with a guarded update, cancels items and
+  fulfillments, and emits `OrderCancelled` + `InventoryReservationReleased`.
+- `GET /orders` (filters + bounded pagination) and `GET /orders/:id` (lines, fulfillments, payment,
+  status timeline) are buyer-scoped: ownership is enforced in SQL, never from a client-supplied id.
+
 ### 5.1 Evidence (commands actually run against the live stack)
 
 ```
@@ -181,6 +205,26 @@ DELETE /api/v1/cart      empty JSON body  -> 200 itemCount=0
 `idempotency_keys` stores the completed records with their replay status; the database was left
 exactly as it was found (the +1/−1 pair nets to zero and the basket is empty).
 
+```
+# checkout & orders (buyer1@bezzo.local, COD so the order is confirmed without a gateway)
+POST /api/v1/checkout/quote  INSTANT   -> 200 placeable=true, deliveryFee=148 (49 + 99 instant surcharge)
+POST /api/v1/orders  (key K, COD)      -> 201 BZ-2026-000002 CONFIRMED, fulfillments=1, payment cod/PENDING
+POST /api/v1/orders  (key K, replay)   -> 201 same order id (no second order, no second reservation)
+GET  /api/v1/orders?pageSize=5         -> 200 history with meta.pagination
+GET  /api/v1/orders/:id                -> 200 items + fulfillments + payment + timeline
+POST /api/v1/orders/:id/cancel         -> 200 CANCELLED; reservations RELEASED, fulfillments CANCELLED
+POST /api/v1/orders/:id/cancel (again) -> 409 ORDER_ALREADY_CANCELLED
+
+# last-unit race: inventory reduced to a single sellable unit, two buyers checkout simultaneously
+buyer1 POST /api/v1/orders -> 201 BZ-2026-000003
+buyer2 POST /api/v1/orders -> 409 INSUFFICIENT_STOCK
+inventory afterwards: available=1 reserved=1 sellable=0, active reservations on that unit = 1
+```
+
+After every verification run the database was restored: all three verification orders are cancelled,
+`inventory_reservations` has no `ACTIVE` rows, no inventory holds `reserved_quantity > 0`, and no
+inventory violates `reserved_quantity <= available_quantity`.
+
 ## 6. Known gaps and required decisions
 
 | Item | Status | Detail |
@@ -199,14 +243,17 @@ exactly as it was found (the +1/−1 pair nets to zero and the basket is empty).
 
 ## 7. Next steps (in order)
 
-1. Checkout + orders vertical slice: `POST /checkout/sessions` → order + per-supplier fulfilment
-   records + inventory reservation with the guarded UPDATE, order status history, idempotent placement.
-2. Payment intent + webhook endpoint with replay protection and reconciliation against `payments`.
+1. Payment capture + webhook endpoint (`POST /webhooks/payments/:provider`) with signature
+   verification, replay protection and reconciliation against `payments`/`payment_attempts`, plus
+   `POST /payments/:id/retry|refund`.
+2. Supplier fulfillment flow (`GET /suppliers/orders`, accept, pack, ready-for-pickup) — this is the
+   precondition for the picker system.
 3. Picker slice (Phase 7): offer generation, atomic claim, run/stop progression, package scans with
    `local_event_id` idempotency, hub receiving with duplicate/unexpected handling.
 4. Jest suites for the critical scenarios: final-unit race, two pickers one task, duplicate scans,
    duplicate webhook, queue delay, partial pickup, hub discrepancy.
-5. `0014_promotions.sql` plus the promotion service and cart promotion preview.
+5. Promotions migration (`0014_promotions.sql`) plus the promotion service and cart promotion preview.
+6. Web: checkout page (address, mode, slot, payment) and order history/detail screens, mobile parity.
 
 ## 8. Verification commands used
 
