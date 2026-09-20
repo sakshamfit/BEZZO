@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nes
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Permission } from '@bezzo/contracts';
 import { z } from 'zod';
-import { Audited, CurrentActor, RequirePermissions, Roles } from '../../common/decorators';
+import { Audited, CurrentActor, Idempotent, RequirePermissions, Roles } from '../../common/decorators';
 import type { AuthenticatedActor } from '../../common/context/request-context';
 import { validate } from '../../common/pipes/zod-validation.pipe';
 import { pagePaginationSchema } from '../../common/pagination/pagination';
@@ -60,6 +60,7 @@ export class SuppliersController {
   }
 
   @Post('verification/submit')
+  @Idempotent('supplier.verification_submit')
   @HttpCode(202)
   @RequirePermissions(Permission.SUPPLIER_PROFILE_WRITE)
   @ApiOperation({ summary: 'Submit the business for compliance verification' })
@@ -75,6 +76,7 @@ export class SuppliersController {
   }
 
   @Post('documents')
+  @Idempotent('supplier.document_upload')
   @RequirePermissions(Permission.SUPPLIER_PROFILE_WRITE)
   @ApiOperation({ summary: 'Upload a compliance document (drug licence, GST, PAN, ...)' })
   async uploadDocument(
@@ -104,6 +106,7 @@ export class SuppliersController {
   }
 
   @Post('listings')
+  @Idempotent('supplier.listing_create')
   @RequirePermissions(Permission.SUPPLIER_LISTING_WRITE)
   @Audited('supplier.listing_created', 'supplier_listing')
   @ApiOperation({ summary: 'Create a listing for a catalog product, optionally with opening stock' })
@@ -153,6 +156,7 @@ export class SuppliersController {
   }
 
   @Post('inventory/:inventoryId/adjust')
+  @Idempotent('supplier.inventory_adjust')
   @HttpCode(200)
   @RequirePermissions(Permission.SUPPLIER_INVENTORY_WRITE)
   @Audited('supplier.inventory_adjusted', 'inventory')
@@ -166,6 +170,7 @@ export class SuppliersController {
   }
 
   @Post('inventory/:inventoryId/set')
+  @Idempotent('supplier.inventory_set')
   @HttpCode(200)
   @RequirePermissions(Permission.SUPPLIER_INVENTORY_WRITE)
   @Audited('supplier.inventory_set', 'inventory')

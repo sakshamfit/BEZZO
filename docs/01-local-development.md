@@ -57,11 +57,36 @@ Seeded development sign-ins (development seed only, never production):
 ## 4. Build and run
 
 ```bash
-corepack pnpm build                 # turbo: contracts → config → crypto → database → api
-corepack pnpm --filter @bezzo/api start        # node dist/main.js
+corepack pnpm build                              # turbo: contracts → config → crypto → database → api → web
+corepack pnpm --filter @bezzo/api start          # node dist/main.js
 # or, with reload on change:
 corepack pnpm --filter @bezzo/api dev
 ```
+
+### Web application (`apps/web`)
+
+Next.js 15 (App Router, React 19, TypeScript strict). It is a pure API consumer:
+
+```bash
+corepack pnpm --filter @bezzo/web dev      # next dev -H 0.0.0.0 -p 3000
+corepack pnpm --filter @bezzo/web build    # production build (route-by-route type checking)
+```
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BEZZO_API_INTERNAL_URL` | `http://127.0.0.1:4000` | server-side base URL the web server proxies to |
+| `BEZZO_API_BASE_PATH` | `/api/v1` | API version prefix |
+| `NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS` | unset | shows the seeded demo logins on `/login` (development convenience only) |
+
+The browser **never** talks to the API host directly. Every call is same-origin
+(`/api/v1/...`) and `next.config.mjs` rewrites it to the internal URL, so the same build works behind
+a sandbox proxy, a preview URL or the production CDN. `/health` and `/version` are proxied too, which
+is what `/status` renders.
+
+Host/origin notes for containerised and preview environments: both servers bind `0.0.0.0`, the API
+reflects the request origin for CORS, and `allowedDevOrigins` in `next.config.mjs` accepts the
+dynamic preview hosts. The API's own HTML pages (`/`, `/docs`) are deliberately embeddable — helmet's
+`xFrameOptions` is disabled, while CSP and framing restrictions stay at the CDN/WAF layer.
 
 The API binds `API_HOST`/`API_PORT` (default `0.0.0.0:4000`) and exposes:
 
@@ -94,7 +119,13 @@ application.
 ## 6. Conventions
 
 - every response uses the standard envelope (`{ success, data, meta }` / `{ success, error, meta }`);
-- every mutating endpoint is idempotent when an `Idempotency-Key` header is supplied;
+- routes marked `@Idempotent(...)` **require** an `Idempotency-Key` header (8–255 chars) and are
+  enforced by `IdempotencyInterceptor`: the first request wins, a concurrent retry gets
+  `IDEMPOTENCY_KEY_CONFLICT` (409), a completed retry replays the stored response, and reusing a key
+  with a different body is rejected. The web client mints a key per logical mutation and reuses it
+  across its own retries;
+- empty JSON bodies are accepted: posting `content-type: application/json` with no body is treated as
+  "no body" instead of a parse error, which is what mobile SDKs do on `DELETE`;
 - clients identify themselves with `X-Client-Platform` (`web` / `android` / `ios` / `admin`);
 - authorization is always re-evaluated server-side from role + permission + ownership + resource
   state; the client is never trusted.

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Permission } from '@bezzo/contracts';
-import { CurrentActor, RequirePermissions, Roles } from '../../common/decorators';
+import { CurrentActor, Idempotent, RequirePermissions, Roles } from '../../common/decorators';
 import type { AuthenticatedActor } from '../../common/context/request-context';
 import { validate } from '../../common/pipes/zod-validation.pipe';
 import { BuyersService, addressSchema, buyerDocumentSchema, buyerProfileSchema } from './buyers.service';
@@ -47,6 +47,7 @@ export class BuyersController {
   }
 
   @Post('addresses')
+  @Idempotent('buyer.address_create')
   @Roles('BUYER', 'BUYER_OWNER', 'BUYER_STAFF')
   @RequirePermissions(Permission.BUYER_PROFILE_WRITE)
   @ApiOperation({ summary: 'Create a delivery address' })
@@ -87,6 +88,7 @@ export class BuyersController {
   }
 
   @Post('documents')
+  @Idempotent('buyer.document_upload')
   @Roles('BUYER', 'BUYER_OWNER', 'BUYER_STAFF')
   @RequirePermissions(Permission.BUYER_PROFILE_WRITE)
   @ApiOperation({ summary: 'Upload a compliance document (retail drug licence, GST, PAN, ...)' })

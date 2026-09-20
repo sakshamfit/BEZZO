@@ -90,7 +90,6 @@ async function bootstrap(): Promise<void> {
     // impossible to embed in the BEZZO console, which hosts them in a same-origin iframe. Framing is
     // restricted by the CDN/WAF and by CSP in the web app instead of a blanket deny here.
     xFrameOptions: false,
-    frameguard: false,
     crossOriginOpenerPolicy: false,
     crossOriginEmbedderPolicy: false,
     // HSTS only makes sense once TLS terminates in front of the API.

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Database, type Database as DatabaseType } from '@bezzo/database';
 import { DATABASE } from '../../infrastructure/database/database.module';
 import { NotificationService } from '../../infrastructure/notifications/notification.service';
-import { CurrentActor } from '../../common/decorators';
+import { CurrentActor, Idempotent } from '../../common/decorators';
 import { validate } from '../../common/pipes/zod-validation.pipe';
 import { pagePaginationSchema } from '../../common/pagination/pagination';
 import type { AuthenticatedActor } from '../../common/context/request-context';
@@ -96,6 +96,7 @@ export class UsersController {
   }
 
   @Post('devices')
+  @Idempotent('user.device_register')
   @HttpCode(200)
   @ApiOperation({ summary: 'Register a device and its push token' })
   async registerDevice(
