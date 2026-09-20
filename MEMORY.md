@@ -40,10 +40,18 @@ working source of truth for the visual language.
 
 ## 2. Where the work stands
 
-**Branch** `arena/01a0bd9d-bezzo`. **PR:** https://github.com/sakshamfit/BEZZO/pull/1 (base `main`).
+**Branch** `arena/01a0bd9d-bezzo`. **PR #1 is MERGED** into `main` as merge commit `38cb4fd`
+(2026-09-20) — https://github.com/sakshamfit/BEZZO/pull/1. `origin/main` now carries the whole
+codebase; its tree hash equals this branch's tree, so the merge introduced nothing new. The branch is
+kept (the session is tied to it) and continues to be the working branch for the next slice.
+
 History: `781d1a9` (specs uploaded) → `dd0835c` → `6f9a628` → `d38b108` (foundation → identity →
 catalogue/inventory → cart → checkout/orders) → `845c3c4` (web app + Phase 6 payments + authorization
-fix + integration tests + reservation commitment; see the commit body for the history reconciliation).
+fix + integration tests + reservation commitment; see the commit body for the history reconciliation)
+→ `a3e97ab` (MEMORY.md + `scripts/verify/`) → merge `38cb4fd`.
+
+Note for whoever picks this up: new commits on this branch now sit *ahead* of `main`, so the next slice
+should land as a fresh PR from this branch rather than being pushed directly to `main`.
 
 | Phase (§44) | Status |
 | --- | --- |
