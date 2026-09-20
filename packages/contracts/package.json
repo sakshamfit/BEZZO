@@ -1,0 +1,20 @@
+{
+  "name": "@bezzo/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BEZZO shared domain contracts: enums, state machines, error codes, DTOs, domain events",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "jest --config jest.config.js --runInBand",
+    "test": "jest --config jest.config.js --runInBand",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5"
+  }
+}

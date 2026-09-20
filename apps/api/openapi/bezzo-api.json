@@ -1,0 +1,953 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/auth/register": {
+      "post": {
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Create an account (buyer, supplier or picker) and start onboarding",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Password sign-in issuing a session (access + rotating refresh token)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/request": {
+      "post": {
+        "operationId": "AuthController_requestOtp",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "summary": "Request an OTP for verification or passwordless login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/verify": {
+      "post": {
+        "operationId": "AuthController_verifyOtp",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Verify an OTP; a LOGIN challenge also issues a session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Rotate a refresh token (reuse revokes the whole token family)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Revoke the current session (or every session with allSessions)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout-all": {
+      "post": {
+        "operationId": "AuthController_logoutAll",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Sign out everywhere",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "operationId": "AuthController_sessions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List the active sessions/devices for the caller",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "AuthController_revokeSession",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Revoke one of the caller sessions",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "AuthController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Current principal with roles, permissions and business profile references",
+        "tags": [
+          "auth"
+        ]
+      },
+      "patch": {
+        "operationId": "AuthController_updateMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Update the caller display name / contact identifiers",
+        "tags": [
+          "auth"
+        ]
+      },
+      "delete": {
+        "operationId": "AuthController_deactivate",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "summary": "Deactivate the caller account (retention policy applies)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/security": {
+      "get": {
+        "operationId": "AuthController_security",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Security summary: recent authentication events and lock state",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/password": {
+      "patch": {
+        "operationId": "AuthController_changePassword",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Change the password; every other session is revoked",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/buyer/profile": {
+      "get": {
+        "operationId": "BuyersController_profile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Get the medical-store business profile",
+        "tags": [
+          "buyer"
+        ]
+      },
+      "patch": {
+        "operationId": "BuyersController_updateProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Update the medical-store business profile",
+        "tags": [
+          "buyer"
+        ]
+      }
+    },
+    "/api/v1/buyer/addresses": {
+      "get": {
+        "operationId": "BuyersController_addresses",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List delivery addresses for the store",
+        "tags": [
+          "buyer"
+        ]
+      },
+      "post": {
+        "operationId": "BuyersController_createAddress",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Create a delivery address",
+        "tags": [
+          "buyer"
+        ]
+      }
+    },
+    "/api/v1/buyer/addresses/{addressId}": {
+      "get": {
+        "operationId": "BuyersController_address",
+        "parameters": [
+          {
+            "name": "addressId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "buyer"
+        ]
+      },
+      "patch": {
+        "operationId": "BuyersController_updateAddress",
+        "parameters": [
+          {
+            "name": "addressId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Update a delivery address",
+        "tags": [
+          "buyer"
+        ]
+      },
+      "delete": {
+        "operationId": "BuyersController_deleteAddress",
+        "parameters": [
+          {
+            "name": "addressId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Archive a delivery address",
+        "tags": [
+          "buyer"
+        ]
+      }
+    },
+    "/api/v1/buyer/documents": {
+      "get": {
+        "operationId": "BuyersController_documents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List compliance documents (signed URLs only, never raw object keys)",
+        "tags": [
+          "buyer"
+        ]
+      },
+      "post": {
+        "operationId": "BuyersController_uploadDocument",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Upload a compliance document (retail drug licence, GST, PAN, ...)",
+        "tags": [
+          "buyer"
+        ]
+      }
+    },
+    "/api/v1/buyer/documents/{documentId}": {
+      "delete": {
+        "operationId": "BuyersController_deleteDocument",
+        "parameters": [
+          {
+            "name": "documentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Remove a pending or rejected document",
+        "tags": [
+          "buyer"
+        ]
+      }
+    },
+    "/api/v1/supplier/profile": {
+      "get": {
+        "operationId": "SuppliersController_profile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Supplier profile with catalog statistics",
+        "tags": [
+          "supplier"
+        ]
+      },
+      "patch": {
+        "operationId": "SuppliersController_updateProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Update supplier profile and pickup location",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/verification/submit": {
+      "post": {
+        "operationId": "SuppliersController_submitForVerification",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "summary": "Submit the business for compliance verification",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/documents": {
+      "get": {
+        "operationId": "SuppliersController_documents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List compliance documents",
+        "tags": [
+          "supplier"
+        ]
+      },
+      "post": {
+        "operationId": "SuppliersController_uploadDocument",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Upload a compliance document (drug licence, GST, PAN, ...)",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/listings": {
+      "get": {
+        "operationId": "SuppliersController_listings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List the supplier catalog listings with live stock",
+        "tags": [
+          "supplier"
+        ]
+      },
+      "post": {
+        "operationId": "SuppliersController_createListing",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Create a listing for a catalog product, optionally with opening stock",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/listings/{listingId}": {
+      "get": {
+        "operationId": "SuppliersController_listing",
+        "parameters": [
+          {
+            "name": "listingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Get one listing with stock and pricing",
+        "tags": [
+          "supplier"
+        ]
+      },
+      "patch": {
+        "operationId": "SuppliersController_updateListing",
+        "parameters": [
+          {
+            "name": "listingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Update price, MOQ, lead time or listing status (price changes are versioned)",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/inventory": {
+      "get": {
+        "operationId": "SuppliersController_inventory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List inventory positions (available, reserved, sellable)",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/inventory/{inventoryId}/adjust": {
+      "post": {
+        "operationId": "SuppliersController_adjustStock",
+        "parameters": [
+          {
+            "name": "inventoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Adjust available stock by a delta; every change is written to the stock ledger",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/inventory/{inventoryId}/set": {
+      "post": {
+        "operationId": "SuppliersController_setStock",
+        "parameters": [
+          {
+            "name": "inventoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Set available stock to an absolute value (stock-take); reserved stock is preserved",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/inventory/{inventoryId}/ledger": {
+      "get": {
+        "operationId": "SuppliersController_ledger",
+        "parameters": [
+          {
+            "name": "inventoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Append-only stock ledger for one inventory position",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/catalog/categories": {
+      "get": {
+        "operationId": "CatalogController_categories",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Active product categories with published product counts",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/catalog/manufacturers": {
+      "get": {
+        "operationId": "CatalogController_manufacturers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Active manufacturers with published product counts",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/catalog/dosage-forms": {
+      "get": {
+        "operationId": "CatalogController_dosageForms",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Supported dosage forms (tablet, syrup, injection, ...)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/catalog/delivery-slots": {
+      "get": {
+        "operationId": "CatalogController_deliverySlots",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Active delivery slots with cut-off times",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/catalog/products": {
+      "get": {
+        "operationId": "CatalogController_products",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Search published products (OpenSearch, degraded DB fallback)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/catalog/products/suggest": {
+      "get": {
+        "operationId": "CatalogController_suggest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Type-ahead product suggestions",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/catalog/products/{productId}": {
+      "get": {
+        "operationId": "CatalogController_product",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Product detail with live supplier offers (best price first)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "UsersController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List the caller's notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notificationId}/read": {
+      "patch": {
+        "operationId": "UsersController_markRead",
+        "parameters": [
+          {
+            "name": "notificationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Mark one notification as read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "operationId": "UsersController_markAllRead",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Mark every notification as read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notification-preferences": {
+      "get": {
+        "operationId": "UsersController_preferences",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List notification preferences (defaults applied when unset)",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "patch": {
+        "operationId": "UsersController_updatePreference",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Enable/disable a notification channel for an event type",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/devices": {
+      "post": {
+        "operationId": "UsersController_registerDevice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Register a device and its push token",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "get": {
+        "operationId": "UsersController_devices",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List the registered devices for the caller",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/devices/{deviceId}": {
+      "delete": {
+        "operationId": "UsersController_removeDevice",
+        "parameters": [
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Unregister a device (stops push delivery to it)",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "PlatformController_live",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Liveness probe",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "PlatformController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Readiness probe with dependency round-trips",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "PlatformController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Full dependency and capability report",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/version": {
+      "get": {
+        "operationId": "PlatformController_version",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Build and configuration metadata (no secrets)",
+        "tags": [
+          "platform"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "BEZZO API",
+    "description": "B2B pharmaceutical marketplace API. Standardised envelopes, stable error codes, Idempotency-Key on mutations, role + permission + ownership authorization.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {}
+  }
+}

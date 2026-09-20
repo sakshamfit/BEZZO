@@ -1,0 +1,35 @@
+{
+  "name": "@bezzo/database",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BEZZO PostgreSQL access layer, migration runner, seeds and schema verification",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "bezzo-db": "./bin/bezzo-db.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-sql.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "node ./bin/bezzo-db.js migrate",
+    "status": "node ./bin/bezzo-db.js status",
+    "seed": "node ./bin/bezzo-db.js seed --env development",
+    "reset": "node ./bin/bezzo-db.js reset --yes",
+    "verify": "node ./bin/bezzo-db.js verify",
+    "test": "jest --config jest.config.js --runInBand",
+    "test:integration": "jest --config jest.config.js --runInBand --testPathPattern=integration",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@bezzo/config": "workspace:*",
+    "@bezzo/contracts": "workspace:*",
+    "@bezzo/crypto": "workspace:*",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/pg": "^8.11.10",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5"
+  }
+}
