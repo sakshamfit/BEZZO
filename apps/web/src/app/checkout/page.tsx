@@ -21,6 +21,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
+import { useCart } from '../../components/cart-context';
 import { formatMoney, humanise, statusTone } from '../../lib/format';
 import type { BuyerAddress, CheckoutQuote, DeliverySlot, OrderDetail } from '../../lib/types';
 
@@ -50,6 +51,7 @@ function addDays(isoDate: string, days: number): string {
 export default function CheckoutPage() {
   const router = useRouter();
   const { ready, principal, request, requestEnvelope } = useAuth();
+  const { refresh: refreshCart } = useCart();
   const [addresses, setAddresses] = useState<BuyerAddress[]>([]);
   const [slots, setSlots] = useState<DeliverySlot[]>([]);
   const [addressId, setAddressId] = useState('');
@@ -126,6 +128,8 @@ export default function CheckoutPage() {
         method: 'POST',
         body: { ...deliveryBody, paymentMethod, buyerNote: buyerNote.trim() || undefined },
       });
+      // The order consumed the basket server-side; re-sync the badge before leaving.
+      void refreshCart();
       router.push(`/orders/${order.id}?placed=1`);
     } catch (caught) {
       if (caught instanceof ApiError) {

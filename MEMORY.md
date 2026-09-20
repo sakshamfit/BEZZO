@@ -294,5 +294,14 @@ fresh session must know:
   simulate scans in the meantime.
 - **Preview fixtures** live in `src/lib/mock-service.ts` (20 products, supplier fulfilment queue,
   recomputed category counts). They are preview-only; the real API is the contract.
-- Verified: typecheck green, 21 routes 200 on `next dev`, cart/quote/search flows exercised through
+- **The mock is a complete mini-backend** (2026-09-20 completeness pass): every `request(...)`
+  endpoint the UI calls is handled — auth register/OTP (preview code `123456`), order cancel +
+  refunds, payment retry/refund/mock-webhook with real state, supplier fulfilment
+  accept/pack/ready/reject with `INVALID_TRANSITION` 409s, listing create/patch, inventory
+  adjust/set + ledger, admin application summary/triage, notification inbox + preferences,
+  address/session mutations, and `POST /applications` (apply form → admin queue). The
+  catch-all returns a **404 `NOT_IMPLEMENTED_IN_PREVIEW`** — never reintroduce a fake-success
+  catch-all; silent `{}` responses are what made console buttons look broken.
+- Mock state is in-memory: dev-server restart resets fixtures (useful after demo mutations).
+- Verified: typecheck green, 24 routes 200 on `next dev`, cart/quote/search flows exercised through
   the app's own route handlers.

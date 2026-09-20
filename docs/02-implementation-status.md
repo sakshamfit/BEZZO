@@ -422,7 +422,56 @@ After every verification run the database was restored: all three verification o
 inventory violates `reserved_quantity <= available_quantity`.
 
 
-### 2026-09-20 — Marketplace UX transformation (web client)
+### 2026-09-20 — Preview completeness pass: every console action now works in the mock backend
+
+Follow-up to the transformation above: a sweep of every `request(...)` call the UI makes
+(≈40 distinct endpoints) against the in-memory mock revealed that the mock only implemented
+about half of them — and its catch-all answered the rest with a fake
+`{ success: true, data: {} }`, so console buttons "succeeded" while doing nothing (and
+sub-view payloads came back with the wrong shape, breaking screens silently).
+
+- **Honest catch-all**: unmocked routes now return a real 404
+  (`NOT_IMPLEMENTED_IN_PREVIEW`) instead of fake success, so any future gap fails loudly.
+- **Mock endpoints added** (all stateful, all validating):
+  - auth: `POST /auth/register`, `POST /auth/otp/request`, `POST /auth/otp/verify`
+    (preview OTP is always `123456`; wrong code → 401 `INVALID_OTP`).
+  - orders: `GET /orders/:id/refunds` (`[]` — honest empty state), `POST /orders/:id/cancel`
+    (real transition to CANCELLED with `cancellation.releasedUnits`, timeline entry, fulfilment
+    cancellation; terminal orders → 409 `ORDER_NOT_CANCELLABLE`).
+  - payments: `POST /payments/:id/retry` (PENDING-only, else 409; bumps attempt counter),
+    `POST /payments/:id/refund` (captured-only, amount-validated, writes refund records and
+    decrements `refundableAmount`), `POST /dev/payments/:id/mock-webhook` (applies
+    PAID/FAILED to PENDING payments; anything else reports DUPLICATE/IGNORED honestly),
+    `GET /admin/payments/:id` (attempts + refunds + webhook evidence).
+  - supplier: `GET /supplier/fulfillments/:id` now returns a **full detail record**
+    (items, packages, timeline, buyer, delivery address, pickup task — previously it returned
+    a summary row, so the detail screen had nothing to render), plus stateful
+    `accept`/`pack`/`ready`/`reject` with transition guards (409 `INVALID_TRANSITION`);
+    `ready` mints a pickup task and returns `{ pickupTaskId, taskCode }`. Listings became a
+    mutable store with `POST /supplier/listings` (create, linked inventory row) and
+    `PATCH /supplier/listings/:id`; inventory gained `POST …/adjust` (signed delta, refuses to
+    go below zero), `POST …/set` (cycle count) and `GET …/ledger` (append-only ledger).
+  - admin: `GET /admin/applications/summary` (computed counters), filtered
+    `GET /admin/applications`, `PATCH /admin/applications/:id` (status + review notes,
+    validated against the real status enum).
+  - account/notifications: `GET /notification-preferences`, `PATCH /notifications/:id/read`,
+    `POST /notifications/read-all` (notifications are now a mutable inbox),
+    `PATCH|DELETE /buyer/addresses/:id`, `DELETE /auth/sessions/:id`.
+  - apply: `POST /applications` builds a real `PartnerApplication` (reference, WhatsApp
+    deep-link) and pushes it into the admin queue — the apply → operations loop is closed.
+- **Client fixes**:
+  - Signed-out users tapping ADD on a product card are routed to
+    `/login?next=<current path>` instead of seeing an `AUTH_REQUIRED` error toast
+    (`cart-context` gained a `requireBuyer()` guard on `addListing`/`addBestOffer`).
+  - Checkout now refreshes the cart badge after placing an order (it previously stayed stale
+    until the next navigation).
+  - Mock `/version` reports `development (in-memory preview)`, so the login screen's
+    demo-credentials panel finally appears in the preview it was built for.
+- Every handler was curl-verified against the dev server (200/201/409/404 paths), the full
+  buyer journey (add → quote → COD order → retry → webhook capture → cancel with released
+  units) was exercised, and `tsc --noEmit` passes.
+
+
 
 Design-system v2 ("Marketplace Precision") + quick-commerce-grade retailer experience, on the same
 BEZZO identity (navy/teal, Plus Jakarta Sans) and the same server-authoritative contracts. No

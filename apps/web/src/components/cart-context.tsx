@@ -20,6 +20,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
 import type { Cart, ProductDetail } from '../lib/types';
@@ -87,6 +88,8 @@ export function prefetchProductDetail(productId: string): void {
 export function CartProvider({ children }: { children: ReactNode }) {
   const { ready: authReady, principal, request } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
+  const pathname = usePathname();
   const [cart, setCart] = useState<Cart | null>(null);
   const [ready, setReady] = useState(false);
   const [adding, setAdding] = useState<Set<string>>(new Set());
@@ -133,6 +136,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const addingProduct = useCallback((productId: string) => adding.has(productId), [adding]);
 
+  /**
+   * Signed-out visitors get a proper funnel instead of an error: send them to
+   * login with a return path so ADD completes right after they sign in.
+   */
+  const requireBuyer = useCallback((): boolean => {
+    if (principal?.buyer) return true;
+    router.push(`/login?next=${encodeURIComponent(pathname ?? '/')}`);
+    return false;
+  }, [pathname, principal, router]);
+
   const mutate = useCallback(
     async (path: string, method: string, body?: unknown): Promise<Cart | null> => {
       try {
@@ -151,6 +164,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const addListing = useCallback(
     async (productId: string, listingId: string, quantity: number): Promise<boolean> => {
+      if (!requireBuyer()) return false;
       setAdding((current) => new Set(current).add(productId));
       try {
         const next = await mutate('/cart/items', 'POST', { supplierProductId: listingId, quantity });
@@ -163,11 +177,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [mutate],
+    [mutate, requireBuyer],
   );
 
   const addBestOffer = useCallback(
     async (productId: string, options?: { quantity?: number }): Promise<boolean> => {
+      if (!requireBuyer()) return false;
       setAdding((current) => new Set(current).add(productId));
       try {
         // Offers arrive best-price-first from the API; prefer the first in-stock offer.
@@ -189,7 +204,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [mutate, toast],
+    [mutate, requireBuyer, toast],
   );
 
   const setQuantity = useCallback(

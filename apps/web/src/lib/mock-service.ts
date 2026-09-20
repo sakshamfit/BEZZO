@@ -22,14 +22,21 @@ import type {
   DeliverySlot,
   DosageForm,
   HealthSnapshot,
+  InventoryLedgerEntry,
+  NotificationItem,
+  NotificationPreference,
   OrderDetail,
   OrderSummary,
   PartnerApplication,
+  PartnerApplicationStatus,
+  PaymentRefundRecord,
+  PaymentWebhookEvent,
   ProductDetail,
   ProductSuggestion,
   ProductSummary,
   SecurityOverview,
   StaffSession,
+  SupplierFulfillmentDetail,
   SupplierInventoryItem,
   SupplierListing,
   SupplierOffer,
@@ -55,7 +62,7 @@ export const MOCK_HEALTH: HealthSnapshot = {
 export const MOCK_VERSION: VersionSnapshot = {
   service: 'bezzo-api',
   version: '1.0.0',
-  environment: 'development',
+  environment: 'development (in-memory preview)',
   apiBasePath: '/api/v1',
   features: {
     search: true,
@@ -1133,8 +1140,12 @@ class MockStore {
 
 export const mockStore = new MockStore();
 
-/* Preview-only supplier fulfilment queue, shaped exactly like the API's rows. */
-export const MOCK_SUPPLIER_FULFILLMENTS = [
+/* Preview-only supplier fulfilment queue, shaped exactly like the API's rows.
+ *
+ * These are full `SupplierFulfillmentDetail` records so the detail screen renders its items,
+ * packages, timeline and pickup task, and so the accept → pack → ready / reject actions can
+ * run a real (if miniature) state machine against the in-memory store. */
+export const MOCK_SUPPLIER_FULFILLMENTS: SupplierFulfillmentDetail[] = [
   {
     id: 'ful-mock-1',
     orderId: 'ord-mock-1',
@@ -1151,6 +1162,66 @@ export const MOCK_SUPPLIER_FULFILLMENTS = [
     deliveryLocality: 'Andheri West',
     deliveryCity: 'Mumbai',
     deliverySlotName: 'Morning',
+    buyer: {
+      id: 'buyer-1',
+      tradeName: 'Sunrise Pharmacy',
+      drugLicenceNumber: 'UP-DL-21B-114520',
+      contactPhone: '+919000000021',
+    },
+    deliveryAddress: {
+      addressLine1: 'Shop No. 4, Sigra Crossing',
+      addressLine2: 'Near Bharat Mata Mandir',
+      locality: 'Andheri West',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      postalCode: '400053',
+    },
+    items: [
+      {
+        id: 'ful-mock-1-item-1',
+        orderItemId: 'oi-1',
+        productId: 'prod-1',
+        productName: 'Dolo 650 Tablet',
+        dosageForm: 'Tablet',
+        packSize: '15 Tablets',
+        sku: 'DOLO-650-15T',
+        batchNumber: 'DL24A102',
+        expiryDate: '2026-12-31',
+        unitPrice: 2850,
+        quantity: 2,
+        lineTotal: 5700,
+        status: 'PENDING',
+        shortPickedQuantity: 0,
+      },
+      {
+        id: 'ful-mock-1-item-2',
+        orderItemId: 'oi-2',
+        productId: 'prod-3',
+        productName: 'Cetaphil Gentle Skin Cleanser',
+        dosageForm: 'Lotion',
+        packSize: '125 ml',
+        sku: 'CET-GSC-125',
+        batchNumber: 'CT24C077',
+        expiryDate: '2027-03-31',
+        unitPrice: 2100,
+        quantity: 2,
+        lineTotal: 4200,
+        status: 'PENDING',
+        shortPickedQuantity: 0,
+      },
+    ],
+    packages: [],
+    timeline: [
+      {
+        id: 'ful-mock-1-tl-1',
+        fromStatus: null,
+        toStatus: 'CREATED',
+        reason: 'Order routed to supplier',
+        actorType: 'SYSTEM',
+        createdAt: '2025-02-15T08:12:00Z',
+      },
+    ],
+    pickupTask: null,
     acceptedAt: null,
     packedAt: null,
     readyAt: null,
@@ -1174,6 +1245,74 @@ export const MOCK_SUPPLIER_FULFILLMENTS = [
     deliveryLocality: 'Bandra',
     deliveryCity: 'Mumbai',
     deliverySlotName: 'Afternoon',
+    buyer: {
+      id: 'buyer-2',
+      tradeName: 'CityCare Meds',
+      drugLicenceNumber: 'MH-DL-21B-220184',
+      contactPhone: '+919000000022',
+    },
+    deliveryAddress: {
+      addressLine1: 'Plot 12, Hill Road',
+      addressLine2: null,
+      locality: 'Bandra',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      postalCode: '400050',
+    },
+    items: [
+      {
+        id: 'ful-mock-2-item-1',
+        orderItemId: 'oi-3',
+        productId: 'prod-2',
+        productName: 'Augmentin 625 Duo Tablet',
+        dosageForm: 'Tablet',
+        packSize: '10 Tablets',
+        sku: 'AUG-625-10T',
+        batchNumber: 'AG24H019',
+        expiryDate: '2026-09-30',
+        unitPrice: 16800,
+        quantity: 5,
+        lineTotal: 84000,
+        status: 'ACCEPTED',
+        shortPickedQuantity: 0,
+      },
+      {
+        id: 'ful-mock-2-item-2',
+        orderItemId: 'oi-4',
+        productId: 'prod-5',
+        productName: 'Pan 40 Tablet',
+        dosageForm: 'Tablet',
+        packSize: '15 Tablets',
+        sku: 'PAN-40-15T',
+        batchNumber: 'PN24D044',
+        expiryDate: '2026-11-30',
+        unitPrice: 6800,
+        quantity: 4,
+        lineTotal: 27200,
+        status: 'ACCEPTED',
+        shortPickedQuantity: 0,
+      },
+    ],
+    packages: [],
+    timeline: [
+      {
+        id: 'ful-mock-2-tl-1',
+        fromStatus: null,
+        toStatus: 'CREATED',
+        reason: 'Order routed to supplier',
+        actorType: 'SYSTEM',
+        createdAt: '2025-02-14T09:31:00Z',
+      },
+      {
+        id: 'ful-mock-2-tl-2',
+        fromStatus: 'CREATED',
+        toStatus: 'ACCEPTED',
+        reason: 'Accepted by supplier',
+        actorType: 'SUPPLIER',
+        createdAt: '2025-02-14T10:02:00Z',
+      },
+    ],
+    pickupTask: null,
     acceptedAt: '2025-02-14T10:02:00Z',
     packedAt: null,
     readyAt: null,
@@ -1197,6 +1336,97 @@ export const MOCK_SUPPLIER_FULFILLMENTS = [
     deliveryLocality: 'Powai',
     deliveryCity: 'Mumbai',
     deliverySlotName: 'Morning',
+    buyer: {
+      id: 'buyer-3',
+      tradeName: 'Wellness Point',
+      drugLicenceNumber: 'MH-DL-21B-331902',
+      contactPhone: '+919000000023',
+    },
+    deliveryAddress: {
+      addressLine1: 'Unit 7, Hiranandani Gardens',
+      addressLine2: null,
+      locality: 'Powai',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      postalCode: '400076',
+    },
+    items: [
+      {
+        id: 'ful-mock-3-item-1',
+        orderItemId: 'oi-5',
+        productId: 'prod-8',
+        productName: 'Shelcal 500 Tablet',
+        dosageForm: 'Tablet',
+        packSize: '15 Tablets',
+        sku: 'SHC-500-15T',
+        batchNumber: 'SC24B211',
+        expiryDate: '2027-01-31',
+        unitPrice: 3200,
+        quantity: 6,
+        lineTotal: 19200,
+        status: 'ACCEPTED',
+        shortPickedQuantity: 0,
+      },
+    ],
+    packages: [
+      {
+        id: 'pkg-mock-3-1',
+        packageCode: 'PKG-BZO-20250213-0877-1',
+        status: 'PACKED',
+        packageType: 'CARTON',
+        weightGrams: 2400,
+        sealNumber: 'SEAL-88412',
+        handlingNotes: 'Fragile — keep upright',
+        pickupTaskId: null,
+        collectedAt: null,
+        createdAt: '2025-02-13T11:20:00Z',
+      },
+    ],
+    timeline: [
+      {
+        id: 'ful-mock-3-tl-1',
+        fromStatus: null,
+        toStatus: 'CREATED',
+        reason: 'Order routed to supplier',
+        actorType: 'SYSTEM',
+        createdAt: '2025-02-13T08:40:00Z',
+      },
+      {
+        id: 'ful-mock-3-tl-2',
+        fromStatus: 'CREATED',
+        toStatus: 'ACCEPTED',
+        reason: 'Accepted by supplier',
+        actorType: 'SUPPLIER',
+        createdAt: '2025-02-13T09:00:00Z',
+      },
+      {
+        id: 'ful-mock-3-tl-3',
+        fromStatus: 'ACCEPTED',
+        toStatus: 'PACKED',
+        reason: '1 package registered',
+        actorType: 'SUPPLIER',
+        createdAt: '2025-02-13T11:20:00Z',
+      },
+      {
+        id: 'ful-mock-3-tl-4',
+        fromStatus: 'PACKED',
+        toStatus: 'READY_FOR_PICKUP',
+        reason: 'Ready for picker collection',
+        actorType: 'SUPPLIER',
+        createdAt: '2025-02-13T11:45:00Z',
+      },
+    ],
+    pickupTask: {
+      id: 'task-mock-3',
+      taskCode: 'PK-88412',
+      status: 'DISPATCHED',
+      priority: 'NORMAL',
+      pickupWindowStart: '2025-02-13T12:00:00Z',
+      pickupWindowEnd: '2025-02-13T14:00:00Z',
+      assignedPickerName: null,
+      assignedPickerPhone: null,
+      createdAt: '2025-02-13T11:45:00Z',
+    },
     acceptedAt: '2025-02-13T09:00:00Z',
     packedAt: '2025-02-13T11:20:00Z',
     readyAt: '2025-02-13T11:45:00Z',
@@ -1220,6 +1450,95 @@ export const MOCK_SUPPLIER_FULFILLMENTS = [
     deliveryLocality: 'Andheri West',
     deliveryCity: 'Mumbai',
     deliverySlotName: 'Morning',
+    buyer: {
+      id: 'buyer-1',
+      tradeName: 'Sunrise Pharmacy',
+      drugLicenceNumber: 'UP-DL-21B-114520',
+      contactPhone: '+919000000021',
+    },
+    deliveryAddress: {
+      addressLine1: 'Shop No. 4, Sigra Crossing',
+      addressLine2: 'Near Bharat Mata Mandir',
+      locality: 'Andheri West',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      postalCode: '400053',
+    },
+    items: [
+      {
+        id: 'ful-mock-4-item-1',
+        orderItemId: 'oi-6',
+        productId: 'prod-1',
+        productName: 'Dolo 650 Tablet',
+        dosageForm: 'Tablet',
+        packSize: '15 Tablets',
+        sku: 'DOLO-650-15T',
+        batchNumber: 'DL24A102',
+        expiryDate: '2026-12-31',
+        unitPrice: 2850,
+        quantity: 11,
+        lineTotal: 31350,
+        status: 'ACCEPTED',
+        shortPickedQuantity: 0,
+      },
+    ],
+    packages: [
+      {
+        id: 'pkg-mock-4-1',
+        packageCode: 'PKG-BZO-20250212-0812-1',
+        status: 'COLLECTED',
+        packageType: 'CARTON',
+        weightGrams: 3100,
+        sealNumber: 'SEAL-87903',
+        handlingNotes: null,
+        pickupTaskId: 'task-mock-4',
+        collectedAt: '2025-02-12T12:10:00Z',
+        createdAt: '2025-02-12T10:30:00Z',
+      },
+    ],
+    timeline: [
+      {
+        id: 'ful-mock-4-tl-1',
+        fromStatus: null,
+        toStatus: 'CREATED',
+        reason: 'Order routed to supplier',
+        actorType: 'SYSTEM',
+        createdAt: '2025-02-12T08:12:00Z',
+      },
+      {
+        id: 'ful-mock-4-tl-2',
+        fromStatus: 'CREATED',
+        toStatus: 'ACCEPTED',
+        reason: 'Accepted by supplier',
+        actorType: 'SUPPLIER',
+        createdAt: '2025-02-12T08:55:00Z',
+      },
+      {
+        id: 'ful-mock-4-tl-3',
+        fromStatus: 'ACCEPTED',
+        toStatus: 'PACKED',
+        reason: '1 package registered',
+        actorType: 'SUPPLIER',
+        createdAt: '2025-02-12T10:30:00Z',
+      },
+      {
+        id: 'ful-mock-4-tl-4',
+        fromStatus: 'PACKED',
+        toStatus: 'READY_FOR_PICKUP',
+        reason: 'Ready for picker collection',
+        actorType: 'SUPPLIER',
+        createdAt: '2025-02-12T11:00:00Z',
+      },
+      {
+        id: 'ful-mock-4-tl-5',
+        fromStatus: 'READY_FOR_PICKUP',
+        toStatus: 'DELIVERED',
+        reason: 'Collected and delivered',
+        actorType: 'SYSTEM',
+        createdAt: '2025-02-12T15:40:00Z',
+      },
+    ],
+    pickupTask: null,
     acceptedAt: '2025-02-12T08:55:00Z',
     packedAt: '2025-02-12T10:30:00Z',
     readyAt: '2025-02-12T11:00:00Z',
@@ -1228,6 +1547,169 @@ export const MOCK_SUPPLIER_FULFILLMENTS = [
     createdAt: '2025-02-12T08:12:00Z',
   },
 ];
+
+/* Preview-only supplier catalogue + stock, mirroring the API's row shapes. */
+export const MOCK_SUPPLIER_LISTINGS: SupplierListing[] = [
+  {
+    id: 'list-1-1',
+    productId: 'prod-1',
+    productName: 'Dolo 650 Tablet',
+    strength: '650mg',
+    packSize: '15 Tablets',
+    dosageForm: 'Tablet',
+    manufacturerName: 'Micro Labs Ltd',
+    prescriptionClassification: 'OTC',
+    supplierSku: 'DOLO-650-15T',
+    status: 'ACTIVE',
+    sellingPrice: 2850,
+    mrpReference: 3360,
+    taxRate: 12,
+    minimumOrderQuantity: 10,
+    leadTimeMinutes: 60,
+    inventoryId: 'inv-dolo-1',
+    availableQuantity: 200,
+    reservedQuantity: 20,
+    sellableQuantity: 180,
+    lowStockThreshold: 50,
+    inventoryStatus: 'IN_STOCK',
+    batchNumber: 'DL24A102',
+    expiryDate: '2026-12-31',
+    createdAt: '2025-01-10T00:00:00Z',
+    updatedAt: '2025-02-15T08:00:00Z',
+  },
+  {
+    id: 'list-2-1',
+    productId: 'prod-2',
+    productName: 'Augmentin 625 Duo Tablet',
+    strength: '500mg + 125mg',
+    packSize: '10 Tablets',
+    dosageForm: 'Tablet',
+    manufacturerName: 'GlaxoSmithKline Pharmaceuticals Ltd',
+    prescriptionClassification: 'SCHEDULE_H',
+    supplierSku: 'AUG-625-10T',
+    status: 'ACTIVE',
+    sellingPrice: 16800,
+    mrpReference: 20450,
+    taxRate: 12,
+    minimumOrderQuantity: 5,
+    leadTimeMinutes: 60,
+    inventoryId: 'inv-aug-1',
+    availableQuantity: 100,
+    reservedQuantity: 10,
+    sellableQuantity: 90,
+    lowStockThreshold: 25,
+    inventoryStatus: 'IN_STOCK',
+    batchNumber: 'AG24H019',
+    expiryDate: '2026-09-30',
+    createdAt: '2025-01-12T00:00:00Z',
+    updatedAt: '2025-02-14T08:00:00Z',
+  },
+];
+
+export const MOCK_SUPPLIER_INVENTORY: SupplierInventoryItem[] = [
+  {
+    id: 'inv-1',
+    listingId: 'list-1-1',
+    productName: 'Dolo 650 Tablet',
+    packSize: '15 Tablets',
+    sellingPrice: 2850,
+    availableQuantity: 20,
+    reservedQuantity: 5,
+    sellableQuantity: 15,
+    damagedQuantity: 0,
+    expiredQuantity: 0,
+    blockedQuantity: 0,
+    lowStockThreshold: 50,
+    status: 'LOW_STOCK',
+    batchNumber: 'DL24A102',
+    expiryDate: '2026-12-31',
+    version: 1,
+    updatedAt: '2025-02-15T08:00:00Z',
+  },
+];
+
+export const MOCK_INVENTORY_LEDGER: InventoryLedgerEntry[] = [
+  {
+    id: 'ledger-1',
+    transactionType: 'STOCK_RECEIVED',
+    quantity: 200,
+    beforeQuantity: 0,
+    afterQuantity: 200,
+    reason: 'Opening stock — batch DL24A102',
+    referenceType: 'GOODS_RECEIPT',
+    referenceId: 'gr-1042',
+    createdAt: '2025-01-10T09:00:00Z',
+  },
+  {
+    id: 'ledger-2',
+    transactionType: 'RESERVATION',
+    quantity: -5,
+    beforeQuantity: 200,
+    afterQuantity: 195,
+    reason: 'Reserved for order BZO-20250212-0812',
+    referenceType: 'ORDER',
+    referenceId: 'ord-mock-4',
+    createdAt: '2025-02-12T08:12:00Z',
+  },
+  {
+    id: 'ledger-3',
+    transactionType: 'MANUAL_ADJUSTMENT',
+    quantity: -175,
+    beforeQuantity: 195,
+    afterQuantity: 20,
+    reason: 'Cycle count correction',
+    referenceType: 'MANUAL',
+    referenceId: null,
+    createdAt: '2025-02-14T17:30:00Z',
+  },
+];
+
+/* Preview-only notification inbox + preference matrix (mutable so mark-read works). */
+export const MOCK_NOTIFICATIONS: NotificationItem[] = [
+  {
+    id: 'notif-1',
+    title: 'Welcome to BEZZO',
+    body: 'Your B2B medical marketplace account is active and ready to order.',
+    type: 'INFO',
+    channel: 'IN_APP',
+    status: 'DELIVERED',
+    read: false,
+    referenceType: null,
+    referenceId: null,
+    createdAt: '2025-02-15T09:00:00Z',
+  },
+  {
+    id: 'notif-2',
+    title: 'Order BZO-20250212-0812 delivered',
+    body: 'All 4 packages were delivered to Sunrise Pharmacy and signed for.',
+    type: 'ORDER_UPDATE',
+    channel: 'IN_APP',
+    status: 'DELIVERED',
+    read: true,
+    referenceType: 'ORDER',
+    referenceId: 'ord-mock-4',
+    createdAt: '2025-02-12T15:41:00Z',
+  },
+];
+
+export const MOCK_NOTIFICATION_PREFERENCES: NotificationPreference[] = [
+  { eventType: 'ORDER_UPDATE', channel: 'IN_APP', enabled: true },
+  { eventType: 'ORDER_UPDATE', channel: 'SMS', enabled: true },
+  { eventType: 'FULFILLMENT_UPDATE', channel: 'IN_APP', enabled: true },
+  { eventType: 'FULFILLMENT_UPDATE', channel: 'SMS', enabled: false },
+  { eventType: 'PAYMENT_UPDATE', channel: 'IN_APP', enabled: true },
+  { eventType: 'PAYMENT_UPDATE', channel: 'EMAIL', enabled: true },
+  { eventType: 'MARKETING', channel: 'IN_APP', enabled: false },
+  { eventType: 'MARKETING', channel: 'EMAIL', enabled: false },
+];
+
+/* Preview-only payment evidence: refund records and webhook events keyed by payment id. */
+export const MOCK_PAYMENT_REFUNDS: Record<string, PaymentRefundRecord[]> = {};
+export const MOCK_PAYMENT_WEBHOOKS: Record<string, PaymentWebhookEvent[]> = {};
+let mockAttemptCounter = 2;
+
+/* In-flight OTP challenges (preview code: 123456). */
+const mockOtpChallenges = new Map<string, { purpose: string; identifier: string; userId: string }>();
 
 export function handleMockRoute(
   path: string,
@@ -1246,6 +1728,54 @@ export function handleMockRoute(
   }
   if (norm === '/applications/routing' || norm === '/api/v1/applications/routing') {
     return { status: 200, payload: { success: true, data: MOCK_ROUTING } };
+  }
+  if (norm === '/applications' || norm === '/api/v1/applications') {
+    if (method !== 'POST') {
+      return {
+        status: 405,
+        payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' } },
+      };
+    }
+    const b = (body ?? {}) as Record<string, string | number | undefined>;
+    const now = new Date().toISOString();
+    const reference = `APP-2025-${String(mockStore.partnerApplications.length + 1).padStart(3, '0')}`;
+    const lines = [
+      `New ${String(b.applicationType ?? 'PARTNER').toLowerCase()} application ${reference}`,
+      `Business: ${b.businessName ?? '—'}`,
+      `Contact: ${b.applicantName ?? '—'} (${b.contactPhone ?? '—'})`,
+      `City: ${b.city ?? '—'}, ${b.state ?? '—'}`,
+    ];
+    if (b.gstin) lines.push(`GSTIN: ${b.gstin}`);
+    if (b.licenceReference) lines.push(`Licence: ${b.licenceReference}`);
+    const application: PartnerApplication = {
+      id: `app-${Date.now()}`,
+      reference,
+      applicationType: (b.applicationType as PartnerApplication['applicationType']) ?? 'SUPPLIER',
+      status: 'NEW',
+      applicantName: String(b.applicantName ?? ''),
+      businessName: String(b.businessName ?? ''),
+      contactPhone: String(b.contactPhone ?? ''),
+      contactEmail: b.contactEmail ? String(b.contactEmail) : null,
+      city: String(b.city ?? ''),
+      state: String(b.state ?? ''),
+      postalCode: b.postalCode ? String(b.postalCode) : null,
+      gstin: b.gstin ? String(b.gstin) : null,
+      licenceReference: b.licenceReference ? String(b.licenceReference) : null,
+      yearsInBusiness: b.yearsInBusiness !== undefined ? Number(b.yearsInBusiness) : null,
+      monthlyVolume: b.monthlyVolume ? String(b.monthlyVolume) : null,
+      message: b.message ? String(b.message) : null,
+      routedToNumber: MOCK_ROUTING.whatsappNumber,
+      routedToDisplay: MOCK_ROUTING.whatsappNumber,
+      whatsappUrl: `${MOCK_ROUTING.whatsappUrl}?text=${encodeURIComponent(lines.join('\n'))}`,
+      deliveryChannel: 'WHATSAPP',
+      source: 'WEB',
+      reviewNotes: null,
+      reviewedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    mockStore.partnerApplications.push(application);
+    return { status: 201, payload: { success: true, data: application } };
   }
 
   // 2. Authentication
@@ -1295,6 +1825,112 @@ export function handleMockRoute(
 
   if (norm === '/auth/logout' || norm === '/api/v1/auth/logout') {
     return { status: 200, payload: { success: true, data: { loggedOut: true } } };
+  }
+  if (norm === '/auth/register' || norm === '/api/v1/auth/register') {
+    if (method !== 'POST') {
+      return {
+        status: 405,
+        payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' } },
+      };
+    }
+    const b = (body ?? {}) as { email?: string; phone?: string; accountType?: string };
+    if (!b.email?.trim() && !b.phone?.trim()) {
+      return {
+        status: 422,
+        payload: {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'An email address or phone number is required.' },
+        },
+      };
+    }
+    return {
+      status: 201,
+      payload: {
+        success: true,
+        data: {
+          userId: `user-${Date.now()}`,
+          status: 'PENDING_VERIFICATION',
+          verificationRequired: true,
+          devOtp: '123456',
+        },
+      },
+    };
+  }
+  if (norm === '/auth/otp/request' || norm === '/api/v1/auth/otp/request') {
+    if (method !== 'POST') {
+      return {
+        status: 405,
+        payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' } },
+      };
+    }
+    const b = (body ?? {}) as { identifier?: string; purpose?: string };
+    const identifier = b.identifier?.trim() ?? '';
+    if (!identifier) {
+      return {
+        status: 422,
+        payload: {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'An identifier is required.' },
+        },
+      };
+    }
+    const masked = identifier.includes('@')
+      ? `${identifier.slice(0, 1)}${'•'.repeat(Math.max(1, identifier.indexOf('@') - 1))}@${identifier.split('@')[1] ?? ''}`
+      : `•••••• ${identifier.slice(-4)}`;
+    const challengeId = `ch_${Date.now()}`;
+    mockOtpChallenges.set(challengeId, {
+      purpose: b.purpose ?? 'EMAIL_VERIFY',
+      identifier,
+      userId: `user-${Date.now()}`,
+    });
+    return {
+      status: 200,
+      payload: {
+        success: true,
+        data: {
+          challengeId,
+          expiresInSeconds: 600,
+          destinationMasked: masked,
+          devOtp: '123456',
+        },
+      },
+    };
+  }
+  if (norm === '/auth/otp/verify' || norm === '/api/v1/auth/otp/verify') {
+    if (method !== 'POST') {
+      return {
+        status: 405,
+        payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' } },
+      };
+    }
+    const b = (body ?? {}) as { challengeId?: string; code?: string };
+    const challenge = b.challengeId ? mockOtpChallenges.get(b.challengeId) : undefined;
+    if (!challenge) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'CHALLENGE_NOT_FOUND', message: 'That verification challenge has expired. Request a new code.' },
+        },
+      };
+    }
+    if ((b.code ?? '').trim() !== '123456') {
+      return {
+        status: 401,
+        payload: {
+          success: false,
+          error: { code: 'INVALID_OTP', message: 'That code is not valid. The preview code is 123456.' },
+        },
+      };
+    }
+    mockOtpChallenges.delete(b.challengeId!);
+    return {
+      status: 200,
+      payload: {
+        success: true,
+        data: { verified: true, purpose: challenge.purpose, userId: challenge.userId },
+      },
+    };
   }
 
   // 3. Catalog
@@ -1698,12 +2334,84 @@ export function handleMockRoute(
   }
 
   if (norm.startsWith('/orders/') || norm.startsWith('/api/v1/orders/')) {
-    const orderId = norm.replace('/api/v1/orders/', '').replace('/orders/', '');
+    const rest = norm.replace('/api/v1/orders/', '').replace('/orders/', '');
+    const [orderId, sub] = rest.split('/');
     const found = mockStore.orders.find((o) => o.id === orderId || o.orderNumber === orderId);
-    if (found) {
+
+    if (!found) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Order ${orderId} does not exist in the preview dataset.` },
+        },
+      };
+    }
+
+    if (!sub) {
       return { status: 200, payload: { success: true, data: found } };
     }
-    return { status: 200, payload: { success: true, data: mockStore.orders[0] ?? null } };
+
+    if (sub === 'refunds') {
+      // No seeded refunds in the preview dataset; the detail screen renders an honest empty state.
+      return { status: 200, payload: { success: true, data: [] } };
+    }
+
+    if (sub === 'cancel') {
+      if (method !== 'POST') {
+        return {
+          status: 405,
+          payload: {
+            success: false,
+            error: { code: 'METHOD_NOT_ALLOWED', message: `${method} is not supported on this endpoint.` },
+          },
+        };
+      }
+      if (['DELIVERED', 'CANCELLED', 'COMPLETED'].includes(found.status)) {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: {
+              code: 'ORDER_NOT_CANCELLABLE',
+              message: `Order ${found.orderNumber} is already ${found.status.toLowerCase()} and can no longer be cancelled.`,
+            },
+          },
+        };
+      }
+      const reason = ((body ?? {}) as { reason?: string }).reason?.trim() || 'Cancelled by buyer';
+      const now = new Date().toISOString();
+      found.status = 'CANCELLED';
+      found.cancelledAt = now;
+      found.activeReservations = 0;
+      found.cancellation = {
+        orderNumber: found.orderNumber,
+        releasedLines: found.items.length,
+        releasedUnits: found.items.reduce((total, item) => total + item.quantity, 0),
+      };
+      found.timeline.push({
+        fromStatus: 'PROCESSING',
+        toStatus: 'CANCELLED',
+        reason,
+        actorType: 'BUYER',
+        createdAt: now,
+      });
+      found.fulfillments.forEach((fulfillment) => {
+        if (!['DELIVERED', 'CANCELLED'].includes(fulfillment.status)) {
+          fulfillment.status = 'CANCELLED';
+          fulfillment.cancelledAt = now;
+        }
+      });
+      return { status: 200, payload: { success: true, data: found } };
+    }
+
+    return {
+      status: 404,
+      payload: {
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Unknown order sub-resource "${sub}".` },
+      },
+    };
   }
 
   // 7. Buyer account
@@ -1724,11 +2432,67 @@ export function handleMockRoute(
     }
     return { status: 200, payload: { success: true, data: MOCK_BUYER_ADDRESSES } };
   }
+  if (norm.startsWith('/buyer/addresses/') || norm.startsWith('/api/v1/buyer/addresses/')) {
+    const aid = norm.split('/buyer/addresses/')[1]?.replace('/api/v1/', '') ?? '';
+    const index = MOCK_BUYER_ADDRESSES.findIndex((address) => address.id === aid);
+    if (index === -1) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Address ${aid} does not exist in the preview dataset.` },
+        },
+      };
+    }
+    if (method === 'DELETE') {
+      MOCK_BUYER_ADDRESSES.splice(index, 1);
+      return { status: 200, payload: { success: true, data: { deleted: true } } };
+    }
+    if (method === 'PATCH') {
+      const b = (body ?? {}) as Record<string, unknown>;
+      const address = MOCK_BUYER_ADDRESSES[index]!;
+      const textFields = ['label', 'contactName', 'contactPhone', 'addressLine1', 'addressLine2', 'landmark', 'city', 'state', 'postalCode'] as const;
+      for (const field of textFields) {
+        if (typeof b[field] === 'string') {
+          (address as unknown as Record<string, unknown>)[field] = (b[field] as string).trim();
+        }
+      }
+      if (typeof b.isDefault === 'boolean' && b.isDefault) {
+        MOCK_BUYER_ADDRESSES.forEach((row, i) => {
+          (row as unknown as Record<string, unknown>).isDefault = i === index;
+        });
+      }
+      address.updatedAt = new Date().toISOString();
+      return { status: 200, payload: { success: true, data: address } };
+    }
+    return { status: 200, payload: { success: true, data: MOCK_BUYER_ADDRESSES[index] } };
+  }
   if (norm === '/buyer/documents' || norm === '/api/v1/buyer/documents') {
     return { status: 200, payload: { success: true, data: MOCK_BUYER_DOCUMENTS } };
   }
   if (norm === '/me/sessions' || norm === '/api/v1/me/sessions') {
     return { status: 200, payload: { success: true, data: MOCK_STAFF_SESSIONS } };
+  }
+  if (norm.startsWith('/auth/sessions/') || norm.startsWith('/api/v1/auth/sessions/')) {
+    if (method !== 'DELETE') {
+      return {
+        status: 405,
+        payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use DELETE.' } },
+      };
+    }
+    const sid = norm.split('/auth/sessions/')[1]?.replace('/api/v1/', '') ?? '';
+    const index = MOCK_STAFF_SESSIONS.findIndex((session) => session.id === sid);
+    if (index === -1) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Session ${sid} does not exist in the preview dataset.` },
+        },
+      };
+    }
+    MOCK_STAFF_SESSIONS.splice(index, 1);
+    return { status: 200, payload: { success: true, data: { revoked: true } } };
   }
   if (norm === '/me/security' || norm === '/api/v1/me/security') {
     return { status: 200, payload: { success: true, data: MOCK_SECURITY_OVERVIEW } };
@@ -1754,182 +2518,861 @@ export function handleMockRoute(
     };
   }
   if (norm.startsWith('/supplier/fulfillments/') || norm.startsWith('/api/v1/supplier/fulfillments/')) {
-    const fid = norm.split('/supplier/fulfillments/')[1]?.replace('/api/v1', '');
+    const rest = norm.split('/supplier/fulfillments/')[1]?.replace('/api/v1/', '') ?? '';
+    const [fid, action] = rest.split('/');
     const found = MOCK_SUPPLIER_FULFILLMENTS.find((row) => row.id === fid);
-    if (found) {
+    if (!found) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Fulfillment ${fid} does not exist in the preview dataset.` },
+        },
+      };
+    }
+
+    const touch = (toStatus: string, reason: string) => {
+      found.timeline.push({
+        id: `ful-${found.id}-tl-${found.timeline.length + 1}-${Date.now()}`,
+        fromStatus: found.status,
+        toStatus,
+        reason,
+        actorType: 'SUPPLIER',
+        createdAt: new Date().toISOString(),
+      });
+      found.status = toStatus;
+    };
+
+    if (!action) {
       return { status: 200, payload: { success: true, data: found } };
     }
-    return { status: 200, payload: { success: true, data: MOCK_SUPPLIER_FULFILLMENTS[0] ?? null } };
+
+    if (method !== 'POST') {
+      return {
+        status: 405,
+        payload: {
+          success: false,
+          error: { code: 'METHOD_NOT_ALLOWED', message: `${method} is not supported on this endpoint.` },
+        },
+      };
+    }
+
+    if (action === 'accept') {
+      if (found.status !== 'CREATED') {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: { code: 'INVALID_TRANSITION', message: `Only CREATED fulfillments can be accepted (current: ${found.status}).` },
+          },
+        };
+      }
+      touch('ACCEPTED', 'Accepted by supplier');
+      found.acceptedAt = new Date().toISOString();
+      found.items.forEach((item) => {
+        item.status = 'ACCEPTED';
+      });
+      return { status: 200, payload: { success: true, data: found } };
+    }
+
+    if (action === 'pack') {
+      if (found.status !== 'ACCEPTED') {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: { code: 'INVALID_TRANSITION', message: `Pack requires an ACCEPTED fulfillment (current: ${found.status}).` },
+          },
+        };
+      }
+      const b = (body ?? {}) as {
+        packages?: Array<{ packageType?: string; weightGrams?: number; sealNumber?: string; handlingNotes?: string }>;
+      };
+      const incoming = b.packages?.length
+        ? b.packages
+        : [{ packageType: 'CARTON', weightGrams: undefined, sealNumber: undefined, handlingNotes: undefined }];
+      for (const pkg of incoming) {
+        found.packages.push({
+          id: `pkg-${found.id}-${found.packages.length + 1}-${Date.now()}`,
+          packageCode: `PKG-${found.fulfillmentReference}-${found.packages.length + 1}`,
+          status: 'PACKED',
+          packageType: pkg.packageType ?? 'CARTON',
+          weightGrams: pkg.weightGrams ?? null,
+          sealNumber: pkg.sealNumber?.trim() || null,
+          handlingNotes: pkg.handlingNotes?.trim() || null,
+          pickupTaskId: null,
+          collectedAt: null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      found.packageCount = found.packages.length;
+      touch('PACKED', `${incoming.length} package${incoming.length > 1 ? 's' : ''} registered`);
+      found.packedAt = new Date().toISOString();
+      return { status: 200, payload: { success: true, data: found } };
+    }
+
+    if (action === 'ready') {
+      if (found.status !== 'PACKED') {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: { code: 'INVALID_TRANSITION', message: `Ready requires a PACKED fulfillment (current: ${found.status}).` },
+          },
+        };
+      }
+      const task = {
+        id: `task-${found.id}-${Date.now()}`,
+        taskCode: `PK-${Math.floor(10000 + Math.random() * 90000)}`,
+        status: 'DISPATCHED',
+        priority: 'NORMAL',
+        pickupWindowStart: new Date().toISOString(),
+        pickupWindowEnd: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        assignedPickerName: null,
+        assignedPickerPhone: null,
+        createdAt: new Date().toISOString(),
+      };
+      found.pickupTask = task;
+      found.packages.forEach((pkg) => {
+        pkg.pickupTaskId = task.id;
+      });
+      touch('READY_FOR_PICKUP', `Pickup task ${task.taskCode} dispatched`);
+      found.readyAt = new Date().toISOString();
+      return { status: 200, payload: { success: true, data: { pickupTaskId: task.id, taskCode: task.taskCode } } };
+    }
+
+    if (action === 'reject') {
+      if (found.status !== 'CREATED') {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: { code: 'INVALID_TRANSITION', message: `Only CREATED fulfillments can be rejected (current: ${found.status}).` },
+          },
+        };
+      }
+      const reason = ((body ?? {}) as { reason?: string }).reason?.trim() || 'Rejected by supplier';
+      touch('REJECTED', reason);
+      found.acceptedAt = null;
+      return { status: 200, payload: { success: true, data: found } };
+    }
+
+    return {
+      status: 404,
+      payload: {
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Unknown fulfillment action "${action}".` },
+      },
+    };
   }
 
   // 8. Supplier portal
   if (norm === '/supplier/profile' || norm === '/api/v1/supplier/profile') {
     return { status: 200, payload: { success: true, data: MOCK_SUPPLIER_PROFILE } };
   }
-  if (norm.startsWith('/supplier/listings') || norm.startsWith('/api/v1/supplier/listings')) {
-    const listings: SupplierListing[] = [
-      {
-        id: 'list-1-1',
-        productId: 'prod-1',
-        productName: 'Dolo 650 Tablet',
-        strength: '650mg',
-        packSize: '15 Tablets',
-        dosageForm: 'Tablet',
-        manufacturerName: 'Micro Labs Ltd',
-        prescriptionClassification: 'OTC',
-        supplierSku: 'DOLO-650-15T',
+  if (norm === '/supplier/listings' || norm === '/api/v1/supplier/listings') {
+    if (method === 'POST') {
+      const b = (body ?? {}) as {
+        productId?: string;
+        supplierSku?: string;
+        sellingPrice?: number;
+        mrpReference?: number;
+        taxRate?: number;
+        minimumOrderQuantity?: number;
+        leadTimeMinutes?: number;
+        openingQuantity?: number;
+        batchNumber?: string;
+        expiryDate?: string;
+        lowStockThreshold?: number;
+      };
+      const product = MOCK_PRODUCTS.find((candidate) => candidate.summary.id === b.productId);
+      const summary = product?.summary;
+      const opening = Math.max(0, Math.round(b.openingQuantity ?? 0));
+      const now = new Date().toISOString();
+      const listingId = `list-${Date.now()}`;
+      const listing: SupplierListing = {
+        id: listingId,
+        productId: b.productId ?? 'prod-1',
+        productName: summary?.name ?? 'Newly listed product',
+        strength: summary?.strength ?? null,
+        packSize: summary?.packSize ?? null,
+        dosageForm: summary?.dosageForm ?? 'TABLET',
+        manufacturerName: summary?.manufacturerName ?? null,
+        prescriptionClassification: summary?.prescriptionClassification ?? 'OTC',
+        supplierSku: b.supplierSku?.trim() || null,
         status: 'ACTIVE',
-        sellingPrice: 2850,
-        mrpReference: 3360,
-        taxRate: 12,
-        minimumOrderQuantity: 10,
-        leadTimeMinutes: 60,
-        inventoryId: 'inv-dolo-1',
-        availableQuantity: 200,
-        reservedQuantity: 20,
-        sellableQuantity: 180,
-        lowStockThreshold: 50,
-        inventoryStatus: 'IN_STOCK',
-        batchNumber: 'DL24A102',
-        expiryDate: '2026-12-31',
-        createdAt: '2025-01-10T00:00:00Z',
-        updatedAt: '2025-02-15T08:00:00Z',
-      },
-      {
-        id: 'list-2-1',
-        productId: 'prod-2',
-        productName: 'Augmentin 625 Duo Tablet',
-        strength: '500mg + 125mg',
-        packSize: '10 Tablets',
-        dosageForm: 'Tablet',
-        manufacturerName: 'GlaxoSmithKline Pharmaceuticals Ltd',
-        prescriptionClassification: 'SCHEDULE_H',
-        supplierSku: 'AUG-625-10T',
-        status: 'ACTIVE',
-        sellingPrice: 16800,
-        mrpReference: 20450,
-        taxRate: 12,
-        minimumOrderQuantity: 5,
-        leadTimeMinutes: 60,
-        inventoryId: 'inv-aug-1',
-        availableQuantity: 100,
-        reservedQuantity: 10,
-        sellableQuantity: 90,
-        lowStockThreshold: 25,
-        inventoryStatus: 'IN_STOCK',
-        batchNumber: 'AG24H019',
-        expiryDate: '2026-09-30',
-        createdAt: '2025-01-12T00:00:00Z',
-        updatedAt: '2025-02-14T08:00:00Z',
-      },
-    ];
-    return {
-      status: 200,
-      payload: {
-        success: true,
-        data: {
-          items: listings,
-          pagination: { page: 1, pageSize: 8, totalItems: listings.length, totalPages: 1 },
-        },
-      },
-    };
-  }
-  if (norm.startsWith('/supplier/inventory') || norm.startsWith('/api/v1/supplier/inventory')) {
-    const items: SupplierInventoryItem[] = [
-      {
-        id: 'inv-1',
-        listingId: 'list-1-1',
-        productName: 'Dolo 650 Tablet',
-        packSize: '15 Tablets',
-        sellingPrice: 2850,
-        availableQuantity: 20,
-        reservedQuantity: 5,
-        sellableQuantity: 15,
+        sellingPrice: Math.max(1, Math.round(b.sellingPrice ?? 0)),
+        mrpReference: b.mrpReference ?? null,
+        taxRate: b.taxRate ?? 12,
+        minimumOrderQuantity: Math.max(1, Math.round(b.minimumOrderQuantity ?? 1)),
+        leadTimeMinutes: Math.max(0, Math.round(b.leadTimeMinutes ?? 60)),
+        inventoryId: `inv-${listingId}`,
+        availableQuantity: opening,
+        reservedQuantity: 0,
+        sellableQuantity: opening,
+        lowStockThreshold: b.lowStockThreshold ?? 10,
+        inventoryStatus: opening <= (b.lowStockThreshold ?? 10) ? 'LOW_STOCK' : 'IN_STOCK',
+        batchNumber: b.batchNumber?.trim() || null,
+        expiryDate: b.expiryDate || null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      MOCK_SUPPLIER_LISTINGS.push(listing);
+      MOCK_SUPPLIER_INVENTORY.push({
+        id: listing.inventoryId!,
+        listingId: listing.id,
+        productName: listing.productName,
+        packSize: listing.packSize,
+        sellingPrice: listing.sellingPrice,
+        availableQuantity: opening,
+        reservedQuantity: 0,
+        sellableQuantity: opening,
         damagedQuantity: 0,
         expiredQuantity: 0,
         blockedQuantity: 0,
-        lowStockThreshold: 50,
-        status: 'LOW_STOCK',
-        batchNumber: 'DL24A102',
-        expiryDate: '2026-12-31',
+        lowStockThreshold: listing.lowStockThreshold ?? 10,
+        status: listing.inventoryStatus ?? 'IN_STOCK',
+        batchNumber: listing.batchNumber,
+        expiryDate: listing.expiryDate,
         version: 1,
-        updatedAt: '2025-02-15T08:00:00Z',
-      },
-    ];
+        updatedAt: now,
+      });
+      return { status: 201, payload: { success: true, data: listing } };
+    }
+    const search = (query.search ?? '').toLowerCase();
+    const status = query.status;
+    let rows = MOCK_SUPPLIER_LISTINGS;
+    if (search) {
+      rows = rows.filter(
+        (row) =>
+          row.productName.toLowerCase().includes(search) ||
+          (row.supplierSku ?? '').toLowerCase().includes(search),
+      );
+    }
+    if (status && status !== 'ALL') {
+      rows = rows.filter((row) => row.status === status);
+    }
+    const page = parseInt(query.page || '1', 10);
+    const pageSize = parseInt(query.pageSize || '8', 10);
+    const start = (page - 1) * pageSize;
     return {
       status: 200,
       payload: {
         success: true,
         data: {
-          items,
-          pagination: { page: 1, pageSize: 8, totalItems: items.length, totalPages: 1 },
+          items: rows.slice(start, start + pageSize),
+          pagination: { page, pageSize, totalItems: rows.length, totalPages: Math.max(1, Math.ceil(rows.length / pageSize)) },
+        },
+      },
+    };
+  }
+  if (norm.startsWith('/supplier/listings/') || norm.startsWith('/api/v1/supplier/listings/')) {
+    const lid = norm.split('/supplier/listings/')[1]?.replace('/api/v1/', '') ?? '';
+    const listing = MOCK_SUPPLIER_LISTINGS.find((row) => row.id === lid);
+    if (!listing) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Listing ${lid} does not exist in the preview dataset.` },
+        },
+      };
+    }
+    if (method === 'PATCH') {
+      const b = (body ?? {}) as Record<string, unknown>;
+      const numeric = (key: string): number | undefined =>
+        b[key] === undefined || b[key] === null || b[key] === '' ? undefined : Number(b[key]);
+      const sellingPrice = numeric('sellingPrice');
+      if (sellingPrice !== undefined && sellingPrice > 0) listing.sellingPrice = Math.round(sellingPrice);
+      const mrp = numeric('mrpReference');
+      if (mrp !== undefined && mrp > 0) listing.mrpReference = Math.round(mrp);
+      const moq = numeric('minimumOrderQuantity');
+      if (moq !== undefined && moq > 0) listing.minimumOrderQuantity = Math.round(moq);
+      const lead = numeric('leadTimeMinutes');
+      if (lead !== undefined && lead >= 0) listing.leadTimeMinutes = Math.round(lead);
+      const tax = numeric('taxRate');
+      if (tax !== undefined && tax >= 0) listing.taxRate = Number(tax);
+      if (typeof b.status === 'string' && ['ACTIVE', 'INACTIVE', 'ARCHIVED'].includes(b.status)) {
+        listing.status = b.status;
+      }
+      listing.updatedAt = new Date().toISOString();
+      return { status: 200, payload: { success: true, data: listing } };
+    }
+    return { status: 200, payload: { success: true, data: listing } };
+  }
+  if (norm.startsWith('/supplier/inventory/') || norm.startsWith('/api/v1/supplier/inventory/')) {
+    const rest = norm.split('/supplier/inventory/')[1]?.replace('/api/v1/', '') ?? '';
+    const [invId, action] = rest.split('/');
+    const item = MOCK_SUPPLIER_INVENTORY.find((row) => row.id === invId);
+    if (!item) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Inventory record ${invId} does not exist in the preview dataset.` },
+        },
+      };
+    }
+
+    const applyStock = (after: number, transactionType: string, quantity: number, reason: string | null) => {
+      const before = item.availableQuantity;
+      item.availableQuantity = Math.max(0, after);
+      item.sellableQuantity = Math.max(0, item.availableQuantity - item.reservedQuantity);
+      item.version += 1;
+      const threshold = item.lowStockThreshold ?? 0;
+      item.status =
+        item.availableQuantity === 0 ? 'OUT_OF_STOCK' : item.availableQuantity <= threshold ? 'LOW_STOCK' : 'IN_STOCK';
+      item.updatedAt = new Date().toISOString();
+      MOCK_INVENTORY_LEDGER.push({
+        id: `ledger-${Date.now()}`,
+        transactionType,
+        quantity,
+        beforeQuantity: before,
+        afterQuantity: item.availableQuantity,
+        reason,
+        referenceType: 'MANUAL',
+        referenceId: null,
+        createdAt: new Date().toISOString(),
+      });
+      const linked = MOCK_SUPPLIER_LISTINGS.find((row) => row.id === item.listingId);
+      if (linked) {
+        linked.availableQuantity = item.availableQuantity;
+        linked.sellableQuantity = item.sellableQuantity;
+        linked.inventoryStatus = item.status;
+        linked.updatedAt = item.updatedAt;
+      }
+    };
+
+    if (!action) {
+      return { status: 200, payload: { success: true, data: item } };
+    }
+    if (action === 'ledger') {
+      const entries = MOCK_INVENTORY_LEDGER.slice().reverse();
+      return { status: 200, payload: { success: true, data: entries } };
+    }
+    if (method !== 'POST') {
+      return {
+        status: 405,
+        payload: {
+          success: false,
+          error: { code: 'METHOD_NOT_ALLOWED', message: `${method} is not supported on this endpoint.` },
+        },
+      };
+    }
+    const b = (body ?? {}) as { quantityDelta?: number; availableQuantity?: number; reason?: string };
+    const reason = b.reason?.trim() || null;
+    if (action === 'adjust') {
+      const delta = Math.trunc(Number(b.quantityDelta ?? 0));
+      if (!Number.isFinite(delta) || delta === 0) {
+        return {
+          status: 422,
+          payload: {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'quantityDelta must be a non-zero integer.' },
+          },
+        };
+      }
+      if (delta < 0 && item.availableQuantity + delta < 0) {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: { code: 'INSUFFICIENT_STOCK', message: `Adjustment would take available stock below zero (available: ${item.availableQuantity}).` },
+          },
+        };
+      }
+      applyStock(item.availableQuantity + delta, 'MANUAL_ADJUSTMENT', delta, reason);
+      return { status: 200, payload: { success: true, data: item } };
+    }
+    if (action === 'set') {
+      const target = Math.trunc(Number(b.availableQuantity ?? NaN));
+      if (!Number.isFinite(target) || target < 0) {
+        return {
+          status: 422,
+          payload: {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'availableQuantity must be zero or a positive integer.' },
+          },
+        };
+      }
+      applyStock(target, 'STOCK_COUNT', target - item.availableQuantity, reason);
+      return { status: 200, payload: { success: true, data: item } };
+    }
+    return {
+      status: 404,
+      payload: {
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Unknown inventory action "${action}".` },
+      },
+    };
+  }
+  if (norm === '/supplier/inventory' || norm === '/api/v1/supplier/inventory') {
+    const status = query.status;
+    let rows = MOCK_SUPPLIER_INVENTORY;
+    if (status && status !== 'ALL') {
+      rows = rows.filter((row) => row.status === status);
+    }
+    if (query.lowStockOnly === 'true') {
+      rows = rows.filter((row) => row.status === 'LOW_STOCK' || row.status === 'OUT_OF_STOCK');
+    }
+    const page = parseInt(query.page || '1', 10);
+    const pageSize = parseInt(query.pageSize || '8', 10);
+    const start = (page - 1) * pageSize;
+    return {
+      status: 200,
+      payload: {
+        success: true,
+        data: {
+          items: rows.slice(start, start + pageSize),
+          pagination: { page, pageSize, totalItems: rows.length, totalPages: Math.max(1, Math.ceil(rows.length / pageSize)) },
         },
       },
     };
   }
 
-  // 9. Admin operations
-  if (norm.startsWith('/admin/applications') || norm.startsWith('/api/v1/admin/applications')) {
-    if (norm.includes('summary')) {
+  if (norm === '/admin/applications/summary' || norm === '/api/v1/admin/applications/summary') {
+    const statusCounts: Record<string, number> = {};
+    let total = 0;
+    for (const application of mockStore.partnerApplications) {
+      statusCounts[application.status] = (statusCounts[application.status] ?? 0) + 1;
+      total += 1;
+    }
+    return {
+      status: 200,
+      payload: {
+        success: true,
+        data: {
+          statusCounts,
+          total,
+          awaitingReview: String((statusCounts.NEW ?? 0) + (statusCounts.IN_REVIEW ?? 0)),
+        },
+      },
+    };
+  }
+  if (norm === '/admin/applications' || norm === '/api/v1/admin/applications') {
+    let rows = mockStore.partnerApplications;
+    if (query.status && query.status !== 'ALL') {
+      rows = rows.filter((row) => row.status === query.status);
+    }
+    if (query.applicationType) {
+      rows = rows.filter((row) => row.applicationType === query.applicationType);
+    }
+    if (query.search) {
+      const needle = query.search.toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          row.applicantName.toLowerCase().includes(needle) ||
+          row.businessName.toLowerCase().includes(needle) ||
+          row.reference.toLowerCase().includes(needle) ||
+          row.city.toLowerCase().includes(needle),
+      );
+    }
+    return { status: 200, payload: { success: true, data: rows } };
+  }
+  if (norm.startsWith('/admin/applications/') || norm.startsWith('/api/v1/admin/applications/')) {
+    const aid = norm.split('/admin/applications/')[1]?.replace('/api/v1/', '') ?? '';
+    const application = mockStore.partnerApplications.find((row) => row.id === aid || row.reference === aid);
+    if (!application) {
       return {
-        status: 200,
+        status: 404,
         payload: {
-          success: true,
-          data: {
-            statusCounts: { IN_REVIEW: 1, APPROVED: 1 },
-            total: mockStore.partnerApplications.length,
-            awaitingReview: '1',
-            whatsappNumber: '+91 90000 00000',
-          },
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Application ${aid} does not exist in the preview dataset.` },
         },
       };
     }
-    return { status: 200, payload: { success: true, data: mockStore.partnerApplications } };
+    if (method === 'PATCH') {
+      const b = (body ?? {}) as { status?: string; reviewNotes?: string };
+      const allowedStatuses = ['NEW', 'CONTACTED', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'DUPLICATE'];
+      if (!b.status || !allowedStatuses.includes(b.status)) {
+        return {
+          status: 422,
+          payload: {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: `status must be one of ${allowedStatuses.join(', ')}.` },
+          },
+        };
+      }
+      application.status = b.status as PartnerApplicationStatus;
+      application.reviewNotes = b.reviewNotes?.trim() || application.reviewNotes;
+      application.reviewedAt = new Date().toISOString();
+      application.updatedAt = application.reviewedAt;
+      return { status: 200, payload: { success: true, data: application } };
+    }
+    return { status: 200, payload: { success: true, data: application } };
   }
 
-  if (norm.startsWith('/admin/payments') || norm.startsWith('/api/v1/admin/payments')) {
+  if (norm === '/admin/payments' || norm === '/api/v1/admin/payments') {
+    let rows = mockStore.payments;
+    if (query.status && query.status !== 'ALL') {
+      rows = rows.filter((row) => row.status === query.status);
+    }
+    if (query.q) {
+      const needle = query.q.toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          row.orderNumber.toLowerCase().includes(needle) ||
+          (row.providerReference ?? '').toLowerCase().includes(needle) ||
+          (row.buyerName ?? '').toLowerCase().includes(needle),
+      );
+    }
+    const page = parseInt(query.page || '1', 10);
+    const pageSize = parseInt(query.pageSize || '25', 10);
+    const start = (page - 1) * pageSize;
     const list: AdminPaymentList = {
-      payments: mockStore.payments,
+      payments: rows.slice(start, start + pageSize),
       pagination: {
-        page: 1,
-        pageSize: 25,
-        totalItems: mockStore.payments.length,
-        totalPages: 1,
+        page,
+        pageSize,
+        totalItems: rows.length,
+        totalPages: Math.max(1, Math.ceil(rows.length / pageSize)),
       },
     };
     return { status: 200, payload: { success: true, data: list } };
   }
+  if (norm.startsWith('/admin/payments/') || norm.startsWith('/api/v1/admin/payments/')) {
+    const pid = norm.split('/admin/payments/')[1]?.replace('/api/v1/', '') ?? '';
+    const row = mockStore.payments.find((p) => p.id === pid);
+    if (!row) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Payment ${pid} does not exist in the preview dataset.` },
+        },
+      };
+    }
+    const detail: AdminPaymentDetail = {
+      payment: { ...row, updatedAt: row.lastReconciledAt ?? row.createdAt },
+      attempts: [
+        {
+          id: `attempt-${row.id}-1`,
+          attemptNumber: 1,
+          gateway: row.gateway,
+          status: row.status,
+          amount: row.amount,
+          providerReference: row.providerReference,
+          failureCode: row.failureCode,
+          failureMessage: row.failureMessage,
+          createdAt: row.createdAt,
+          updatedAt: row.paidAt ?? row.createdAt,
+        },
+      ],
+      refunds: MOCK_PAYMENT_REFUNDS[row.id] ?? [],
+      webhookEvents: MOCK_PAYMENT_WEBHOOKS[row.id] ?? [],
+    };
+    return { status: 200, payload: { success: true, data: detail } };
+  }
+  if (
+    (norm.startsWith('/payments/') || norm.startsWith('/api/v1/payments/')) &&
+    (norm.endsWith('/retry') || norm.endsWith('/refund'))
+  ) {
+    const parts = norm.replace('/api/v1/payments/', '').replace('/payments/', '').split('/');
+    const pid = parts[0];
+    const action = parts[1];
+    const row = mockStore.payments.find((p) => p.id === pid);
+    const order = mockStore.orders.find((o) => o.payment?.id === pid);
+    if (!row && !order?.payment) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Payment ${pid} does not exist in the preview dataset.` },
+        },
+      };
+    }
+
+    if (action === 'retry') {
+      if (method !== 'POST') {
+        return {
+          status: 405,
+          payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' } },
+        };
+      }
+      const target = row ?? null;
+      const status = target?.status ?? order!.payment!.status;
+      if (status === 'CAPTURED' || status === 'REFUNDED') {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: { code: 'PAYMENT_NOT_RETRIABLE', message: `A ${status.toLowerCase()} payment cannot be retried.` },
+          },
+        };
+      }
+      mockAttemptCounter += 1;
+      const attemptNumber = mockAttemptCounter;
+      const providerReference = `razorpay_mock_retry_${attemptNumber}`;
+      if (target) {
+        target.status = 'PENDING';
+        target.providerReference = providerReference;
+        target.failureCode = null;
+        target.failureMessage = null;
+      }
+      if (order?.payment) {
+        order.payment.status = 'PENDING';
+        order.payment.providerReference = providerReference;
+        order.paymentStatus = 'PENDING';
+      }
+      const intent = {
+        paymentId: pid,
+        orderId: target?.orderId ?? order!.id,
+        orderNumber: target?.orderNumber ?? order!.orderNumber,
+        status: 'PENDING',
+        amount: target?.amount ?? order!.payment!.amount,
+        currency: target?.currency ?? order!.payment!.currency ?? 'INR',
+        method: target?.method ?? order!.payment!.method,
+        gateway: target?.gateway ?? order!.payment!.gateway,
+        attemptNumber,
+        providerReference,
+        providerPayload: {},
+      };
+      return { status: 200, payload: { success: true, data: intent } };
+    }
+
+    if (action === 'refund') {
+      if (method !== 'POST') {
+        return {
+          status: 405,
+          payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' } },
+        };
+      }
+      if (!row) {
+        return {
+          status: 404,
+          payload: {
+            success: false,
+            error: { code: 'NOT_FOUND', message: `Refunds are only supported on back-office payments in the preview.` },
+          },
+        };
+      }
+      if (row.status !== 'CAPTURED') {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: { code: 'PAYMENT_NOT_REFUNDABLE', message: `Only captured payments can be refunded (current: ${row.status}).` },
+          },
+        };
+      }
+      const b = (body ?? {}) as { amount?: string | number; reason?: string };
+      const requested = b.amount === undefined || b.amount === '' ? row.refundableAmount : Number(b.amount);
+      if (!Number.isFinite(requested) || requested <= 0) {
+        return {
+          status: 422,
+          payload: { success: false, error: { code: 'VALIDATION_ERROR', message: 'Refund amount must be positive.' } },
+        };
+      }
+      if (requested > row.refundableAmount) {
+        return {
+          status: 409,
+          payload: {
+            success: false,
+            error: { code: 'REFUND_EXCEEDS_LIMIT', message: `Refund exceeds the refundable amount (${row.refundableAmount}).` },
+          },
+        };
+      }
+      const now = new Date().toISOString();
+      const record: PaymentRefundRecord = {
+        id: `ref-${Date.now()}`,
+        amount: Math.round(requested),
+        currency: row.currency,
+        status: 'PROCESSED',
+        reason: b.reason?.trim() || null,
+        gatewayRefundReference: `rfnd_mock_${Date.now()}`,
+        requestedBy: 'admin-1',
+        failureReason: null,
+        processedAt: now,
+        createdAt: now,
+      };
+      MOCK_PAYMENT_REFUNDS[row.id] = [...(MOCK_PAYMENT_REFUNDS[row.id] ?? []), record];
+      row.refundedAmount += record.amount;
+      row.refundableAmount = Math.max(0, row.amount - row.refundedAmount);
+      if (row.refundableAmount === 0) row.status = 'REFUNDED';
+      const result = {
+        refundId: record.id,
+        paymentId: row.id,
+        orderId: row.orderId,
+        orderNumber: row.orderNumber,
+        amount: record.amount,
+        currency: record.currency,
+        status: record.status,
+        providerRefundReference: record.gatewayRefundReference,
+        message: 'Refund processed through the mock gateway. Settlement follows the gateway timeline.',
+      };
+      return { status: 200, payload: { success: true, data: result } };
+    }
+  }
+  if (norm.startsWith('/dev/payments/') || norm.startsWith('/api/v1/dev/payments/')) {
+    const pid = norm.split('/dev/payments/')[1]?.replace('/api/v1/', '').replace('/mock-webhook', '') ?? '';
+    if (!norm.endsWith('/mock-webhook')) {
+      return {
+        status: 404,
+        payload: { success: false, error: { code: 'NOT_FOUND', message: 'Unknown development endpoint.' } },
+      };
+    }
+    if (method !== 'POST') {
+      return {
+        status: 405,
+        payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' } },
+      };
+    }
+    const row = mockStore.payments.find((p) => p.id === pid);
+    const order = mockStore.orders.find((o) => o.payment?.id === pid);
+    if (!row && !order?.payment) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Payment ${pid} does not exist in the preview dataset.` },
+        },
+      };
+    }
+    const outcome = ((body ?? {}) as { outcome?: string }).outcome ?? 'PAID';
+    const current = row?.status ?? order!.payment!.status;
+    const applied = (outcome === 'PAID' && current === 'PENDING') || (outcome === 'FAILED' && current === 'PENDING');
+    const eventId = `evt_mock_${Date.now()}`;
+    const eventType = outcome === 'PAID' ? 'payment.captured' : 'payment.failed';
+    const now = new Date().toISOString();
+    const nextStatus = !applied ? current : outcome === 'PAID' ? 'CAPTURED' : 'FAILED';
+    if (applied) {
+      if (row) {
+        row.status = nextStatus;
+        if (outcome === 'PAID') row.paidAt = now;
+        if (outcome === 'FAILED') {
+          row.failureCode = 'GATEWAY_DECLINED';
+          row.failureMessage = 'Simulated gateway decline (preview).';
+        }
+      }
+      if (order?.payment) {
+        order.payment.status = nextStatus;
+        if (outcome === 'PAID') order.payment.paidAt = now;
+        if (outcome === 'FAILED') {
+          order.payment.failureCode = 'GATEWAY_DECLINED';
+          order.payment.failureMessage = 'Simulated gateway decline (preview).';
+        }
+        order.paymentStatus = nextStatus;
+      }
+    }
+    const event: PaymentWebhookEvent = {
+      id: `we-${Date.now()}`,
+      externalEventId: eventId,
+      eventType,
+      signatureValid: true,
+      processingStatus: applied ? 'PROCESSED' : current === nextStatus ? 'DUPLICATE' : 'IGNORED',
+      processingAttempts: 1,
+      processingError: null,
+      receivedAt: now,
+      processedAt: applied ? now : null,
+    };
+    const owner = row?.id ?? order!.payment!.id;
+    MOCK_PAYMENT_WEBHOOKS[owner] = [...(MOCK_PAYMENT_WEBHOOKS[owner] ?? []), event];
+    const webhookOutcome = {
+      status: applied ? 'PROCESSED' : current === nextStatus ? 'DUPLICATE' : 'IGNORED',
+      eventId,
+      eventType,
+      paymentId: owner,
+      applied,
+      simulatedOutcome: outcome,
+      paymentStatus: nextStatus,
+    };
+    return { status: 200, payload: { success: true, data: webhookOutcome } };
+  }
 
   if (norm === '/notifications' || norm === '/api/v1/notifications') {
+    let rows = MOCK_NOTIFICATIONS;
+    if (query.unreadOnly === 'true') {
+      rows = rows.filter((row) => !row.read);
+    }
+    const unreadCount = MOCK_NOTIFICATIONS.filter((row) => !row.read).length;
+    const pageSize = parseInt(query.pageSize || '20', 10);
     return {
       status: 200,
       payload: {
         success: true,
-        data: [
-          {
-            id: 'notif-1',
-            title: 'Welcome to BEZZO',
-            body: 'Your B2B medical marketplace account is active and ready to order.',
-            type: 'INFO',
-            channel: 'IN_APP',
-            status: 'DELIVERED',
-            read: false,
-            referenceType: null,
-            referenceId: null,
-            createdAt: '2025-02-15T09:00:00Z',
+        data: {
+          items: rows,
+          pagination: {
+            page: parseInt(query.page || '1', 10),
+            pageSize,
+            totalItems: rows.length,
+            totalPages: Math.max(1, Math.ceil(rows.length / pageSize)),
           },
-        ],
-        meta: { unreadCount: 1 },
+          meta: { unreadCount },
+        },
       },
     };
   }
+  if (norm.startsWith('/notifications/') || norm.startsWith('/api/v1/notifications/')) {
+    const rest = norm.split('/notifications/')[1]?.replace('/api/v1/', '') ?? '';
+    if (rest === 'read-all') {
+      if (method !== 'POST') {
+        return {
+          status: 405,
+          payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' } },
+        };
+      }
+      MOCK_NOTIFICATIONS.forEach((row) => {
+        row.read = true;
+        if (row.status === 'DELIVERED') row.status = 'READ';
+      });
+      return { status: 200, payload: { success: true, data: { updated: MOCK_NOTIFICATIONS.length } } };
+    }
+    const nid = rest.replace('/read', '');
+    const notification = MOCK_NOTIFICATIONS.find((row) => row.id === nid);
+    if (!notification) {
+      return {
+        status: 404,
+        payload: {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Notification ${nid} does not exist in the preview dataset.` },
+        },
+      };
+    }
+    if (rest.endsWith('/read')) {
+      if (method !== 'PATCH') {
+        return {
+          status: 405,
+          payload: { success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use PATCH.' } },
+        };
+      }
+      notification.read = true;
+      if (notification.status === 'DELIVERED') notification.status = 'READ';
+      return { status: 200, payload: { success: true, data: notification } };
+    }
+    return { status: 200, payload: { success: true, data: notification } };
+  }
+  if (norm === '/notification-preferences' || norm === '/api/v1/notification-preferences') {
+    if (method === 'PATCH' || method === 'PUT') {
+      const b = (body ?? {}) as { eventType?: string; channel?: string; enabled?: boolean };
+      const pref = MOCK_NOTIFICATION_PREFERENCES.find(
+        (row) => row.eventType === b.eventType && row.channel === b.channel,
+      );
+      if (!pref) {
+        return {
+          status: 404,
+          payload: {
+            success: false,
+            error: { code: 'NOT_FOUND', message: 'No such preference row in the preview dataset.' },
+          },
+        };
+      }
+      if (typeof b.enabled === 'boolean') pref.enabled = b.enabled;
+      return { status: 200, payload: { success: true, data: MOCK_NOTIFICATION_PREFERENCES } };
+    }
+    return { status: 200, payload: { success: true, data: MOCK_NOTIFICATION_PREFERENCES } };
+  }
 
-  // Default catch-all response
+  // Anything unmocked fails loudly instead of pretending to succeed: a silent `{}` here used to
+  // make console buttons "work" while changing nothing.
   return {
-    status: 200,
+    status: 404,
     payload: {
-      success: true,
-      data: {},
+      success: false,
+      error: {
+        code: 'NOT_IMPLEMENTED_IN_PREVIEW',
+        message: `${method} ${norm} is not available in the in-memory preview.`,
+      },
     },
   };
 }
