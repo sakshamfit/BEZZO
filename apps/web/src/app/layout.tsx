@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from '../lib/auth-context';
 import { AppShell } from '../components/app-shell';
+import { ToastProvider } from '../components/toast';
+import { CartProvider } from '../components/cart-context';
 
 /**
  * The typefaces are loaded from the Google Fonts CDN by the browser (link tags), not fetched at build
@@ -13,15 +15,15 @@ const FONT_HREF =
   'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap';
 
 export const metadata: Metadata = {
-  title: 'BEZZO — B2B pharmaceutical marketplace',
+  title: 'BEZZO — medicines for your medical store, from verified wholesalers',
   description:
-    'BEZZO connects verified pharmaceutical wholesalers with verified medical stores, with controlled pickup, hub receiving and delivery.',
+    'BEZZO connects verified pharmaceutical wholesalers with verified medical stores. Search medicines, compare supplier availability, order and track every stage to your counter.',
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#0a2156',
+  themeColor: '#ffffff',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +36,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <AuthProvider>
-          <AppShell>{children}</AppShell>
+          <ToastProvider>
+            <CartProvider>
+              <AppShell>{children}</AppShell>
+            </CartProvider>
+          </ToastProvider>
         </AuthProvider>
       </body>
     </html>

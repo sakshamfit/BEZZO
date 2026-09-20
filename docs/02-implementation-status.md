@@ -421,6 +421,61 @@ After every verification run the database was restored: all three verification o
 `inventory_reservations` has no `ACTIVE` rows, no inventory holds `reserved_quantity > 0`, and no
 inventory violates `reserved_quantity <= available_quantity`.
 
+
+### 2026-09-20 — Marketplace UX transformation (web client)
+
+Design-system v2 ("Marketplace Precision") + quick-commerce-grade retailer experience, on the same
+BEZZO identity (navy/teal, Plus Jakarta Sans) and the same server-authoritative contracts. No
+competitor branding, colours, assets or copy were used; product/category imagery is BEZZO's own
+deterministic inline SVG system (no external images).
+
+- **Design system**: `apps/web/src/app/globals.css` rewritten as v2 — motion tokens, touch-target
+  rule, safe-area handling, reduced-motion guard, and marketplace primitives (product cards,
+  category tiles, rails, steppers, search, toasts, bottom navigation, sticky bars, order tracking,
+  skeletons). Every v1 class still works; supplier/admin/account screens are untouched by it.
+- **Chrome**: new `AppShell` — sticky header with the global search, buyer "delivering to" anchor,
+  live cart badge, mobile slide-down menu; mobile bottom navigation (Home/Categories/Orders/Cart/
+  Account) for buyers and visitors; offline banner.
+- **Search**: `SearchBar` — 250 ms debounce, AbortController, 60 s client cache, combobox
+  a11y (aria-activedescendant, arrows/Enter/Escape), recent searches (local only), live categories
+  as the resting state, "see all results" into the server-rendered catalogue.
+- **Home**: `/` is now the marketplace (categories rail, "Stocked by several suppliers", "New in the
+  catalogue", buyer rails below); marketing moved into a compact signed-out hero + trust strip.
+- **Buyer rails**: Quick order / Order again derive from the buyer's real order history (`GET
+  /orders` + recent details) and re-add the exact `supplierProductId` bought before.
+- **Catalogue**: `/catalog` rebuilt — sticky toolbar (category/sort/in-stock), compact product-card
+  grid with quick add, skeletons via `loading.tsx`, honest empty/error states.
+- **Product cards**: compact cards with deterministic product visuals (dosage-form glyphs), price
+  range, supplier count, stock/Rx flags, ADD → stepper with display-only optimism that rolls back on
+  server refusal (server remains authoritative; money never computed client-side).
+- **PDP**: offer selection (best-price default) with per-offer MOQ/batch/expiry/lead time, facts
+  panel, related-products rail, sticky mobile purchase bar.
+- **Cart**: supplier-grouped compact lines, shared cart context powering the badge + rails +
+  screen, sticky mobile checkout bar. **Contract fixed in preview mock**: cart add now mirrors the
+  real API body (`supplierProductId`), and the mock `/catalog/products` envelope now matches the
+  real `{ items, pagination }` shape (the old preview shape broke the catalogue list).
+- **Checkout**: same two-step server-authoritative flow, restyled (numbered steps, choice tiles,
+  sticky mobile action bar).
+- **Orders & tracking**: order cards with a progress meter derived from fulfilment state machines;
+  order detail renders an order-level track (placed → payment → confirmed → outcome) and a
+  per-supplier journey track mapped to the real fulfilment enum (CREATED…DELIVERED incl. picker and
+  hub copy) using the server's own timestamps — no simulated progress.
+- **Supplier dashboard**: operational command centre — action-required count, metrics, quick action
+  tiles, fulfilment queue (from `GET /supplier/fulfillments`), low-stock and listings tables.
+- **Picker surface**: `/picker` — role-gated, honest shell (no dispatch backend yet; the flow is
+  documented, not simulated).
+- **Admin home**: `/admin` — launch pad to applications, payments, status.
+- **Route groups**: console/auth/apply pages moved under `app/(shell)/` (URLs unchanged) with a
+  container layout; marketplace pages own their width.
+- **Preview fixtures**: mock catalogue expanded to 20 products across categories (with multi-supplier
+  offers), supplier fulfilment queue fixtures, category counts recomputed, empty categories pruned.
+  All preview-only; the real API remains the contract.
+
+Evidence: `npm run typecheck` green; all 21 routes 200 via `next dev` (mock-backed); cart
+add → patch → quote flow verified through the same route handlers the UI calls; suggest + search +
+category filters verified against the preview API.
+
+
 ## 6. Known gaps and required decisions
 
 | Item | Status | Detail |

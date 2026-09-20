@@ -1,19 +1,30 @@
 'use client';
 
 /**
- * Cart screen.
+ * Cart screen v2 — fast, compact, honest.
  *
- * The cart is *intent*, not a reservation: every read re-prices from live inventory, so a line can come
- * back with issues (stock moved, listing paused, supplier no longer verified). This screen renders what
- * the API returns and never edits the cart optimistically — a failed mutation leaves the previous,
- * server-confirmed cart on screen together with the API's own error message.
+ * Same server-authoritative contract as before (the cart is intent, not a
+ * reservation; every read re-prices from live inventory), now through the
+ * shared cart context so the header badge and this screen are one state. Line
+ * edits show a pending state instead of freezing the whole screen; failures
+ * roll back to the server's last confirmed cart with a toast.
  */
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-import { ApiError } from '../../lib/api';
+import { useMemo, useState } from 'react';
 import { useAuth } from '../../lib/auth-context';
-import { formatMoney, humanise, statusTone } from '../../lib/format';
-import type { Cart } from '../../lib/types';
+import { useCart } from '../../components/cart-context';
+import { QuantityStepper } from '../../components/quantity-stepper';
+import { ProductVisual } from '../../components/product-visual';
+import {
+  AlertIcon,
+  CartIcon,
+  ChevronRight,
+  HubIcon,
+  InfoIcon,
+  TrashIcon,
+} from '../../components/icons';
+import { formatMoney } from '../../lib/format';
+import type { CartLine } from '../../lib/types';
 
 const ISSUE_LABELS: Record<string, string> = {
   LISTING_UNAVAILABLE: 'No longer listed for sale',
@@ -25,297 +36,324 @@ const ISSUE_LABELS: Record<string, string> = {
   BUYER_NOT_VERIFIED_FOR_RESTRICTED_ITEM: 'Your licence verification is required for this item',
 };
 
-export default function CartPage() {
-  const { ready, principal, request } = useAuth();
-  const [cart, setCart] = useState<Cart | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busyLine, setBusyLine] = useState<string | null>(null);
-  const [clearing, setClearing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function LineRow({ line }: { line: CartLine }) {
+  const { setQuantity, removeLine } = useCart();
+  const [busy, setBusy] = useState(false);
+  const max = Math.max(line.sellableQuantity, line.minimumOrderQuantity);
 
-  const isBuyer = Boolean(principal?.buyer);
-
-  const load = useCallback(async () => {
-    if (!principal) return;
-    setLoading(true);
-    setError(null);
+  async function run(action: () => Promise<boolean>) {
+    setBusy(true);
     try {
-      setCart(await request<Cart>('/cart'));
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'The cart could not be loaded.');
+      await action();
     } finally {
-      setLoading(false);
-    }
-  }, [principal, request]);
-
-  useEffect(() => {
-    if (!ready) return;
-    if (!principal) {
-      setLoading(false);
-      return;
-    }
-    void load();
-  }, [ready, principal, load]);
-
-  async function mutate(path: string, method: string, body?: unknown, lineId?: string) {
-    setBusyLine(lineId ?? 'cart');
-    setError(null);
-    try {
-      setCart(await request<Cart>(path, { method, body }));
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'That change was not accepted.');
-    } finally {
-      setBusyLine(null);
+      setBusy(false);
     }
   }
 
-  if (!ready || loading) {
-    return <p className="muted">Loading your cart…</p>;
+  return (
+    <div className="cart-line" style={line.available ? undefined : { background: 'var(--danger-bg)' }}>
+      <Link href={`/catalog/${line.productId}`} className="cl-visual" aria-label={`View ${line.productName}`}>
+        <ProductVisual
+          productId={line.productId}
+          dosageForm={null}
+          size="sm"
+          label={line.productName}
+        />
+      </Link>
+
+      <div className="cl-body">
+        <Link href={`/catalog/${line.productId}`} className="cl-name" title={line.productName}>
+          {line.productName}
+        </Link>
+        <div className="cl-meta">
+          {[line.strength, line.packSize].filter(Boolean).join(' · ') || '—'}
+          {line.batchNumber ? ` · batch ${line.batchNumber}` : ''}
+          {line.expiryDate ? ` · exp ${line.expiryDate}` : ''}
+        </div>
+        <div className="cl-flags">
+          {!line.available && <span className="badge danger">Unavailable</span>}
+          {line.issues.map((issue) => (
+            <span className="badge warn" key={issue}>
+              {ISSUE_LABELS[issue] ?? issue}
+            </span>
+          ))}
+        </div>
+
+        <div className="cl-actions">
+          <QuantityStepper
+            compact
+            label={line.productName}
+            value={line.quantity}
+            min={line.minimumOrderQuantity}
+            max={max}
+            pending={busy}
+            onDecrease={() =>
+              void run(() =>
+                line.quantity - 1 < line.minimumOrderQuantity
+                  ? removeLine(line.id)
+                  : setQuantity(line.id, line.quantity - 1),
+              )
+            }
+            onIncrease={() => void run(() => setQuantity(line.id, line.quantity + 1))}
+          />
+          <span className="cl-min">
+            Min {line.minimumOrderQuantity} · {line.sellableQuantity} sellable
+          </span>
+          <button
+            type="button"
+            className="cl-remove"
+            aria-label={`Remove ${line.productName} from cart`}
+            disabled={busy}
+            onClick={() => void run(() => removeLine(line.id))}
+          >
+            <TrashIcon size={14} /> Remove
+          </button>
+        </div>
+      </div>
+
+      <div className="cl-price">
+        <span className="cl-unit">
+          {formatMoney(line.unitPrice)}
+          {line.taxRate !== null ? <span className="small faint"> +{line.taxRate}% GST</span> : null}
+        </span>
+        <span className="cl-total">{formatMoney(line.lineTotal)}</span>
+      </div>
+    </div>
+  );
+}
+
+export default function CartPage() {
+  const { ready, principal } = useAuth();
+  const { cart, isBuyer, ready: cartReady, clear } = useCart();
+  const [clearing, setClearing] = useState(false);
+
+  const items = cart?.items ?? [];
+  const groups = useMemo(() => {
+    const bySupplier = new Map<string, { supplierId: string; supplierName: string; city: string | null; lines: CartLine[] }>();
+    for (const line of items) {
+      const group = bySupplier.get(line.supplierId) ?? {
+        supplierId: line.supplierId,
+        supplierName: line.supplierName,
+        city: line.supplierCity,
+        lines: [],
+      };
+      group.lines.push(line);
+      bySupplier.set(line.supplierId, group);
+    }
+    return [...bySupplier.values()];
+  }, [items]);
+
+  if (!ready) {
+    return (
+      <div className="container" aria-busy="true">
+        <div className="skeleton" style={{ height: 28, width: 180, marginBottom: 16 }} />
+        <div className="skeleton" style={{ height: 220, borderRadius: 'var(--radius-lg)', marginBottom: 12 }} />
+        <div className="skeleton" style={{ height: 120, borderRadius: 'var(--radius-lg)' }} />
+      </div>
+    );
   }
 
   if (!principal) {
     return (
-      <section className="stack">
-        <h1>Your cart</h1>
-        <p className="muted">Sign in with your retailer account to build a purchase cart.</p>
-        <Link className="btn primary" href="/login?next=%2Fcart">
-          Sign in
-        </Link>
-      </section>
+      <div className="container">
+        <div className="empty-card" style={{ marginTop: 'var(--space-lg)' }}>
+          <span className="ec-icon">
+            <CartIcon size={24} />
+          </span>
+          <span className="ec-title">Sign in to build your purchase cart</span>
+          <p className="ec-body">
+            Your cart holds offers from verified wholesalers with live trade prices — sign in with your
+            retailer account to start.
+          </p>
+          <div className="ec-actions">
+            <Link className="btn primary small" href="/login?next=%2Fcart">
+              Sign in
+            </Link>
+            <Link className="btn small" href="/catalog">
+              Browse the catalogue
+            </Link>
+          </div>
+        </div>
+      </div>
     );
   }
 
   if (!isBuyer) {
     return (
-      <section className="stack">
-        <h1>Your cart</h1>
-        <p className="muted">
-          Only retailer (medical store) accounts hold a purchasing cart. Your account is signed in with a
-          different role.
-        </p>
-        <Link className="btn" href="/account">
-          Go to account
-        </Link>
-      </section>
+      <div className="container">
+        <div className="empty-card" style={{ marginTop: 'var(--space-lg)' }}>
+          <span className="ec-icon">
+            <InfoIcon size={24} />
+          </span>
+          <span className="ec-title">Only retailer accounts hold a purchasing cart</span>
+          <p className="ec-body">Your account is signed in with a different role.</p>
+          <div className="ec-actions">
+            <Link className="btn small" href="/account">
+              Go to account
+            </Link>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  const items = cart?.items ?? [];
-  const suppliers = Array.from(new Set(items.map((item) => item.supplierName)));
+  if (!cartReady && !cart) {
+    return (
+      <div className="container" aria-busy="true">
+        <div className="skeleton" style={{ height: 28, width: 180, marginBottom: 16 }} />
+        <div className="skeleton" style={{ height: 220, borderRadius: 'var(--radius-lg)', marginBottom: 12 }} />
+        <div className="skeleton" style={{ height: 120, borderRadius: 'var(--radius-lg)' }} />
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="container">
+        <div className="empty-card" style={{ marginTop: 'var(--space-lg)' }}>
+          <span className="ec-icon">
+            <CartIcon size={24} />
+          </span>
+          <span className="ec-title">Your cart is empty</span>
+          <p className="ec-body">
+            Add medicines from the catalogue — prices and availability are live from verified
+            wholesalers.
+          </p>
+          <div className="ec-actions">
+            <Link className="btn primary small" href="/catalog">
+              Browse the catalogue
+            </Link>
+            <Link className="btn small" href="/">
+              Go home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <section className="stack" style={{ gap: 'var(--space-5)' }}>
-      <header className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+    <div className="container container-narrow page-footroom">
+      <header className="spread" style={{ marginBottom: 'var(--space-md)', alignItems: 'baseline' }}>
         <div>
-          <h1 style={{ marginBottom: 4 }}>Your cart</h1>
-          <p className="muted small" style={{ margin: 0 }}>
-            Prices and availability are re-read from live supplier inventory on every load. Nothing is
-            reserved until checkout.
+          <h1 style={{ fontSize: '1.375rem', margin: 0 }}>Your cart</h1>
+          <p className="small muted" style={{ margin: '4px 0 0' }}>
+            {cart?.unitCount ?? 0} unit{(cart?.unitCount ?? 0) === 1 ? '' : 's'} · {cart?.supplierCount ?? 0}{' '}
+            supplier{(cart?.supplierCount ?? 0) === 1 ? '' : 's'} · re-priced from live inventory on every
+            change
           </p>
         </div>
-        {items.length > 0 && (
-          <button
-            type="button"
-            className="btn small"
-            disabled={clearing || busyLine !== null}
-            onClick={async () => {
-              setClearing(true);
-              await mutate('/cart', 'DELETE');
+        <button
+          type="button"
+          className="btn small"
+          disabled={clearing}
+          onClick={async () => {
+            setClearing(true);
+            try {
+              await clear();
+            } finally {
               setClearing(false);
-            }}
-          >
-            {clearing ? 'Clearing…' : 'Clear cart'}
-          </button>
-        )}
+            }
+          }}
+        >
+          {clearing ? 'Clearing…' : 'Clear cart'}
+        </button>
       </header>
 
-      {error && (
-        <div className="alert" role="alert">
-          {error}
+      {cart?.hasIssues && (
+        <div className="alert warn" role="status" style={{ marginBottom: 'var(--space-md)' }}>
+          <AlertIcon size={16} />
+          <span>Some lines need attention before checkout — they are marked below.</span>
         </div>
       )}
 
-      {cart?.hasIssues && items.length > 0 && (
-        <div className="alert" role="status">
-          Some lines need attention before checkout — they are marked below.
-        </div>
-      )}
-
-      {items.length === 0 ? (
-        <div className="card stack">
-          <h2 style={{ margin: 0 }}>Nothing here yet</h2>
-          <p className="muted" style={{ margin: 0 }}>
-            Browse the catalogue and add offers from verified wholesalers.
-          </p>
-          <Link className="btn primary" href="/catalog" style={{ alignSelf: 'flex-start' }}>
-            Browse catalogue
-          </Link>
-        </div>
-      ) : (
+      <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1.6fr) minmax(300px, 1fr)', alignItems: 'start' }}>
         <div className="stack" style={{ gap: 'var(--space-4)' }}>
-          {suppliers.map((supplier) => {
-            const lines = items.filter((item) => item.supplierName === supplier);
-            const city = lines[0]?.supplierCity ?? null;
-            return (
-              <div className="card" key={supplier}>
-                <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <h2 style={{ margin: 0, fontSize: '1.05rem' }}>{supplier}</h2>
-                  <span className="small faint">{city ? `Ships from ${city}` : 'Supplier fulfilment'}</span>
-                </div>
-
-                <table className="table" style={{ marginTop: 'var(--space-3)' }}>
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th style={{ width: 96 }}>Price</th>
-                      <th style={{ width: 168 }}>Quantity</th>
-                      <th style={{ width: 110 }}>Line total</th>
-                      <th style={{ width: 48 }} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((line) => {
-                      const busy = busyLine === line.id;
-                      const max = Math.max(line.sellableQuantity, line.minimumOrderQuantity);
-                      return (
-                        <tr key={line.id}>
-                          <td>
-                            <div style={{ fontWeight: 600 }}>{line.productName}</div>
-                            <div className="small faint">
-                              {[line.strength, line.packSize].filter(Boolean).join(' · ')}
-                              {line.batchNumber ? ` · batch ${line.batchNumber}` : ''}
-                              {line.expiryDate ? ` · exp ${line.expiryDate}` : ''}
-                            </div>
-                            <div className="row small" style={{ gap: 6, marginTop: 4 }}>
-                              <span className={`badge ${statusTone(line.prescriptionClassification)}`}>
-                                {humanise(line.prescriptionClassification)}
-                              </span>
-                              {!line.available && <span className="badge danger">Unavailable</span>}
-                              {line.issues.map((issue) => (
-                                <span className="badge warn" key={issue}>
-                                  {ISSUE_LABELS[issue] ?? humanise(issue)}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td>
-                            <div>{formatMoney(line.unitPrice)}</div>
-                            <div className="small faint">
-                              {line.taxRate !== null ? `+${line.taxRate}% GST` : 'GST at invoice'}
-                            </div>
-                          </td>
-                          <td>
-                            <div className="row" style={{ gap: 6 }}>
-                              <button
-                                type="button"
-                                className="btn small"
-                                aria-label={`Decrease quantity of ${line.productName}`}
-                                disabled={busy || line.quantity <= line.minimumOrderQuantity}
-                                onClick={() =>
-                                  void mutate(
-                                    `/cart/items/${line.id}`,
-                                    'PATCH',
-                                    { quantity: line.quantity - 1 },
-                                    line.id,
-                                  )
-                                }
-                              >
-                                −
-                              </button>
-                              <span style={{ minWidth: 32, textAlign: 'center' }}>{line.quantity}</span>
-                              <button
-                                type="button"
-                                className="btn small"
-                                aria-label={`Increase quantity of ${line.productName}`}
-                                disabled={busy || line.quantity >= max}
-                                onClick={() =>
-                                  void mutate(
-                                    `/cart/items/${line.id}`,
-                                    'PATCH',
-                                    { quantity: line.quantity + 1 },
-                                    line.id,
-                                  )
-                                }
-                              >
-                                +
-                              </button>
-                            </div>
-                            <div className="small faint">
-                              Min {line.minimumOrderQuantity} · {line.sellableQuantity} sellable
-                            </div>
-                          </td>
-                          <td>
-                            <div style={{ fontWeight: 600 }}>{formatMoney(line.lineTotal)}</div>
-                            <div className="small faint">incl. {formatMoney(line.lineTax)}</div>
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="btn small"
-                              aria-label={`Remove ${line.productName}`}
-                              disabled={busy}
-                              onClick={() => void mutate(`/cart/items/${line.id}`, 'DELETE', undefined, line.id)}
-                            >
-                              ×
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          {groups.map((group) => (
+            <section className="card tight" key={group.supplierId}>
+              <header
+                className="spread"
+                style={{ alignItems: 'baseline', borderBottom: '1px solid var(--bg-inset)', paddingBottom: 10, marginBottom: 10 }}
+              >
+                <strong style={{ fontSize: '0.9375rem', color: 'var(--primary)' }}>{group.supplierName}</strong>
+                <span className="small faint">
+                  {group.city ? `Ships from ${group.city}` : 'Supplier fulfilment'}
+                </span>
+              </header>
+              <div className="stack" style={{ gap: 'var(--space-3)' }}>
+                {group.lines.map((line) => (
+                  <LineRow key={line.id} line={line} />
+                ))}
               </div>
-            );
-          })}
+            </section>
+          ))}
+        </div>
 
-          <div className="card stack" style={{ gap: 'var(--space-2)' }}>
-            <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Order summary</h2>
-            <div className="row" style={{ justifyContent: 'space-between' }}>
+        <aside className="stack tight">
+          <div className="card tight">
+            <h2 style={{ fontSize: '1rem', margin: '0 0 var(--space-3)' }}>Order summary</h2>
+            <div className="cart-total-row">
               <span className="muted">Subtotal ({cart?.unitCount} units)</span>
               <span>{formatMoney(cart?.estimatedSubtotal ?? 0, cart?.currency)}</span>
             </div>
-            <div className="row" style={{ justifyContent: 'space-between' }}>
+            <div className="cart-total-row">
               <span className="muted">Estimated GST</span>
               <span>{formatMoney(cart?.estimatedTax ?? 0, cart?.currency)}</span>
             </div>
-            <div
-              className="row"
-              style={{ justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 8 }}
-            >
-              <strong>Estimated total</strong>
-              <strong>{formatMoney(cart?.estimatedTotal ?? 0, cart?.currency)}</strong>
+            <div className="cart-total-row">
+              <span className="muted">Delivery</span>
+              <span className="muted small">Priced at checkout</span>
             </div>
-            <p className="small faint" style={{ margin: 0 }}>
-              {cart?.supplierCount ?? 0} supplier(s) will fulfil this cart. Each supplier becomes a separate
-              fulfilment, and an order may combine several fulfilments with independent pickup, hub receipt
-              and delivery tracking.
-            </p>
+            <div className="cart-total-row total">
+              <span>Estimated total</span>
+              <span>{formatMoney(cart?.estimatedTotal ?? 0, cart?.currency)}</span>
+            </div>
             <Link
-              className="btn primary"
+              className="btn accent block"
               href="/checkout"
               aria-disabled={cart?.hasIssues ? 'true' : undefined}
-              style={{ justifyContent: 'center', opacity: cart?.hasIssues ? 0.6 : 1 }}
+              style={cart?.hasIssues ? { opacity: 0.6 } : undefined}
               onClick={(event) => {
-                // The checkout screen re-validates everything; blocking here would only hide the reason
-                // why a line cannot be ordered. The warning stays visible instead.
+                // The checkout screen re-validates everything; blocking here would only
+                // hide the reason a line cannot be ordered. The warning stays visible.
                 if (cart?.hasIssues) event.preventDefault();
               }}
             >
-              Proceed to checkout
+              Proceed to checkout <ChevronRight size={16} />
             </Link>
-            <p className="small faint" style={{ margin: 0 }}>
-              Stock is reserved only when the order is placed, and the reservation is released automatically if
-              the order is cancelled or the payment never completes.
+            <p className="hint" style={{ margin: '10px 0 0' }}>
+              Stock is reserved only when the order is placed, and the reservation is released
+              automatically if the order is cancelled or the payment never completes.
             </p>
-            {cart?.hasIssues && (
-              <div className="alert warn" role="status">
-                Resolve the flagged lines above before checking out — the pricing screen will list exactly what is
-                blocking the order.
-              </div>
-            )}
           </div>
+
+          <div className="card tight">
+            <h3 style={{ fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+              <HubIcon size={16} /> One order, several fulfilments
+            </h3>
+            <p className="small muted" style={{ margin: '6px 0 0' }}>
+              Each supplier above becomes a separate fulfilment with its own pickup, hub receipt and
+              delivery tracking — so a delay at one wholesaler never hides behind a single status.
+            </p>
+          </div>
+        </aside>
+      </div>
+
+      {/* Sticky mobile checkout bar */}
+      <div className="stickybar">
+        <div className="container stickybar-inner">
+          <div className="sb-info">
+            <span className="sb-title">{formatMoney(cart?.estimatedTotal ?? 0, cart?.currency)}</span>
+            <span className="sb-sub">
+              {cart?.unitCount ?? 0} units · {cart?.supplierCount ?? 0} supplier
+              {(cart?.supplierCount ?? 0) === 1 ? '' : 's'}
+            </span>
+          </div>
+          <Link className="btn accent" href="/checkout" aria-disabled={cart?.hasIssues ? 'true' : undefined}>
+            Checkout <ChevronRight size={16} />
+          </Link>
         </div>
-      )}
-    </section>
+      </div>
+    </div>
   );
 }

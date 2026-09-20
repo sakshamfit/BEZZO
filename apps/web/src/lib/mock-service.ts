@@ -338,6 +338,244 @@ export const MOCK_PRODUCTS: MockProductData[] = [
   },
 ];
 
+/* Additional preview fixtures: a fuller catalogue so the marketplace surfaces
+   (rails, category browse, search suggestions, supplier comparison) have real
+   variety to show. Shaped exactly like the API's summaries and details. */
+const EXTRA_MOCK_PRODUCTS: MockProductData[] = [
+  mkProduct({
+    id: 'prod-5', name: 'Pan 40 Tablet', genericName: 'Pantoprazole', brandName: 'Pan',
+    manufacturerName: 'Alkem Laboratories', categoryId: 'cat-8', dosageForm: 'Tablet', strength: '40mg',
+    packSize: '15 Tablets', prescriptionClassification: 'PRESCRIPTION_REQUIRED',
+    composition: 'Pantoprazole Sodium IP 40 mg', storage: 'Store below 30°C, protect from moisture',
+    description: 'Proton pump inhibitor for gastro-oesophageal reflux and hyperacidity.',
+    restricted: false, offers: [
+      offer('list-5-1', 'sup-1', 'ABC Pharma Wholesaler', 'Varanasi', 11800, 13100, 12, 10, 45, 320, 'PN23F441', '2027-03-31'),
+      offer('list-5-2', 'sup-2', 'XYZ Distributors', 'Varanasi', 12150, 13100, 12, 5, 75, 180, 'PN23G118', '2026-12-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-6', name: 'Telma 40 Tablet', genericName: 'Telmisartan', brandName: 'Telma',
+    manufacturerName: 'Glenmark Pharmaceuticals', categoryId: 'cat-6', dosageForm: 'Tablet', strength: '40mg',
+    packSize: '15 Tablets', prescriptionClassification: 'PRESCRIPTION_REQUIRED',
+    composition: 'Telmisartan IP 40 mg', storage: 'Store below 25°C in a dry place',
+    description: 'Angiotensin II receptor blocker for hypertension.',
+    restricted: false, offers: [
+      offer('list-6-1', 'sup-1', 'ABC Pharma Wholesaler', 'Varanasi', 9600, 10600, 12, 10, 60, 240, 'TL24A210', '2027-06-30'),
+      offer('list-6-2', 'sup-3', 'MedLink Supplies', 'Prayagraj', 9950, 10600, 12, 10, 120, 90, 'TL24B090', '2026-10-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-7', name: 'Glycomet GP 2 Tablet', genericName: 'Metformin + Glimepiride', brandName: 'Glycomet',
+    manufacturerName: 'USV Pvt Ltd', categoryId: 'cat-7', dosageForm: 'Tablet', strength: '500mg/2mg',
+    packSize: '15 Tablets', prescriptionClassification: 'PRESCRIPTION_REQUIRED',
+    composition: 'Metformin Hydrochloride IP 500 mg + Glimepiride IP 2 mg', storage: 'Store below 30°C, protect from light',
+    description: 'Fixed-dose combination for type 2 diabetes mellitus.',
+    restricted: false, offers: [
+      offer('list-7-1', 'sup-2', 'XYZ Distributors', 'Varanasi', 7200, 8100, 12, 10, 90, 260, 'GL24C77', '2027-01-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-8', name: 'A to Z NS Tablet', genericName: 'Multivitamin & Minerals', brandName: 'A to Z',
+    manufacturerName: 'Alkem Laboratories', categoryId: 'cat-10', dosageForm: 'Tablet', strength: null,
+    packSize: '15 Tablets', prescriptionClassification: 'OTC',
+    composition: 'Multivitamin and multimineral supplement', storage: 'Store below 25°C in a dry place',
+    description: 'Daily nutritional supplement with vitamins, minerals and trace elements.',
+    restricted: false, offers: [
+      offer('list-8-1', 'sup-1', 'ABC Pharma Wholesaler', 'Varanasi', 5400, 6150, 12, 10, 45, 410, 'AZ24D31', '2027-08-31'),
+      offer('list-8-2', 'sup-3', 'MedLink Supplies', 'Prayagraj', 5600, 6150, 12, 5, 60, 150, 'AZ24E15', '2026-09-30'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-9', name: 'Cheston Cold Tablet', genericName: 'Cetirizine + Paracetamol + Phenylephrine', brandName: 'Cheston',
+    manufacturerName: 'Cipla Ltd', categoryId: 'cat-9', dosageForm: 'Tablet', strength: null,
+    packSize: '10 Tablets', prescriptionClassification: 'OTC',
+    composition: 'Cetirizine Dihydrochloride IP 5 mg + Paracetamol IP 500 mg + Phenylephrine Hydrochloride IP 10 mg',
+    storage: 'Store below 30°C', description: 'Combination for cold and allergic rhinitis symptoms.',
+    restricted: false, offers: [
+      offer('list-9-1', 'sup-2', 'XYZ Distributors', 'Varanasi', 3600, 4100, 12, 10, 45, 300, 'CH24F9', '2027-02-28'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-10', name: 'Ascoril LS Syrup', genericName: 'Levosalbutamol + Ambroxol + Guaifenesin', brandName: 'Ascoril',
+    manufacturerName: 'Glenmark Pharmaceuticals', categoryId: 'cat-9', dosageForm: 'Syrup', strength: '100ml',
+    packSize: '1 Bottle', prescriptionClassification: 'PRESCRIPTION_REQUIRED',
+    composition: 'Levosalbutamol + Ambroxol + Guaifenesin syrup', storage: 'Store below 30°C, protect from light',
+    description: 'Expectorant cough syrup for productive cough.',
+    restricted: false, offers: [
+      offer('list-10-1', 'sup-1', 'ABC Pharma Wholesaler', 'Varanasi', 8900, 9900, 12, 5, 60, 120, 'AS24G2', '2026-08-31'),
+      offer('list-10-2', 'sup-3', 'MedLink Supplies', 'Prayagraj', 9200, 9900, 12, 5, 45, 80, 'AS24H8', '2026-07-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-11', name: 'Monocef 1gm Injection', genericName: 'Ceftriaxone', brandName: 'Monocef',
+    manufacturerName: 'Aristo Pharmaceuticals', categoryId: 'cat-4', dosageForm: 'Injection', strength: '1gm',
+    packSize: '1 Vial', prescriptionClassification: 'PRESCRIPTION_REQUIRED',
+    composition: 'Ceftriaxone Sodium IP equivalent to Ceftriaxone 1 gm', storage: 'Store below 25°C; reconstituted solution to be used immediately',
+    description: 'Third-generation cephalosporin for serious bacterial infections.',
+    restricted: false, offers: [
+      offer('list-11-1', 'sup-2', 'XYZ Distributors', 'Varanasi', 4700, 5300, 12, 5, 30, 200, 'MN24I6', '2027-05-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-12', name: 'Human Mixtard 30/70 Injection', genericName: 'Insulin Human (Isophane)', brandName: 'Mixtard',
+    manufacturerName: 'Novo Nordisk', categoryId: 'cat-7', dosageForm: 'Injection', strength: '100 IU/ml',
+    packSize: '1 Cartridge', prescriptionClassification: 'PRESCRIPTION_REQUIRED',
+    composition: 'Insulin human (isophane) 100 IU/ml suspension for injection', storage: 'Store at 2°C–8°C; do not freeze',
+    description: 'Pre-mixed human insulin for diabetes management.',
+    restricted: false, offers: [
+      offer('list-12-1', 'sup-3', 'MedLink Supplies', 'Prayagraj', 17800, 19000, 5, 2, 45, 60, 'MX24J1', '2026-11-30'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-13', name: 'Moov Pain Relief Cream', genericName: 'Diclofenac + Menthol + Methyl Salicylate', brandName: 'Moov',
+    manufacturerName: 'Reckitt', categoryId: 'cat-5', dosageForm: 'Cream', strength: '30g',
+    packSize: '1 Tube', prescriptionClassification: 'OTC',
+    composition: 'Topical analgesic cream', storage: 'Store below 30°C',
+    description: 'Topical pain relief for muscle and joint pain.',
+    restricted: false, offers: [
+      offer('list-13-1', 'sup-1', 'ABC Pharma Wholesaler', 'Varanasi', 6900, 7600, 18, 10, 45, 350, 'MV24K4', '2027-04-30'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-14', name: 'Zincovit Tablet', genericName: 'Multivitamin + Zinc', brandName: 'Zincovit',
+    manufacturerName: 'Apex Laboratories', categoryId: 'cat-10', dosageForm: 'Tablet', strength: null,
+    packSize: '15 Tablets', prescriptionClassification: 'OTC',
+    composition: 'Multivitamin, multimineral and zinc supplement', storage: 'Store below 25°C',
+    description: 'Zinc-based nutritional supplement for daily immunity support.',
+    restricted: false, offers: [
+      offer('list-14-1', 'sup-2', 'XYZ Distributors', 'Varanasi', 4200, 4800, 12, 10, 60, 500, 'ZN24L7', '2027-09-30'),
+      offer('list-14-2', 'sup-1', 'ABC Pharma Wholesaler', 'Varanasi', 4350, 4800, 12, 10, 45, 220, 'ZN24M3', '2026-12-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-15', name: 'Accu-Chek Active Strips', genericName: 'Glucose Test Strips', brandName: 'Accu-Chek',
+    manufacturerName: 'Roche Diabetes Care', categoryId: 'cat-11', dosageForm: 'Device', strength: null,
+    packSize: '50 Strips', prescriptionClassification: 'OTC',
+    composition: 'Glucose oxidase based test strips for blood glucose monitoring',
+    storage: 'Store at 2°C–32°C in original container',
+    description: 'Blood glucose test strips for use with Accu-Chek Active meter.',
+    restricted: false, offers: [
+      offer('list-15-1', 'sup-3', 'MedLink Supplies', 'Prayagraj', 11400, 12500, 12, 2, 90, 85, 'AC24N5', '2027-01-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-16', name: 'Digene Gel Mint Flavour', genericName: 'Antacid Suspension', brandName: 'Digene',
+    manufacturerName: 'Abbott India', categoryId: 'cat-8', dosageForm: 'Syrup', strength: '200ml',
+    packSize: '1 Bottle', prescriptionClassification: 'OTC',
+    composition: 'Magaldrate + Simethicone antacid gel', storage: 'Store below 30°C; do not freeze',
+    description: 'Antacid gel for heartburn and acidity relief.',
+    restricted: false, offers: [
+      offer('list-16-1', 'sup-1', 'ABC Pharma Wholesaler', 'Varanasi', 8200, 9000, 12, 5, 45, 260, 'DG24O9', '2027-07-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-17', name: 'Cifran CT Tablet', genericName: 'Ciprofloxacin + Tinidazole', brandName: 'Cifran',
+    manufacturerName: 'Sun Pharmaceutical', categoryId: 'cat-4', dosageForm: 'Tablet', strength: '500mg/600mg',
+    packSize: '10 Tablets', prescriptionClassification: 'PRESCRIPTION_REQUIRED',
+    composition: 'Ciprofloxacin IP 500 mg + Tinidazole IP 600 mg', storage: 'Store below 30°C, protected from light',
+    description: 'Antibacterial combination for mixed infections.',
+    restricted: false, offers: [
+      offer('list-17-1', 'sup-2', 'XYZ Distributors', 'Varanasi', 6800, 7500, 12, 10, 60, 140, 'CF24P2', '2026-10-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-18', name: 'Betadine Gargle', genericName: 'Povidone Iodine', brandName: 'Betadine',
+    manufacturerName: 'Win-Medicare', categoryId: 'cat-12', dosageForm: 'Drops', strength: '2% w/v',
+    packSize: '100ml', prescriptionClassification: 'OTC',
+    composition: 'Povidone Iodine 2% w/v gargle and mouthwash', storage: 'Store below 25°C',
+    description: 'Antiseptic gargle for throat infections.',
+    restricted: false, offers: [
+      offer('list-18-1', 'sup-3', 'MedLink Supplies', 'Prayagraj', 5100, 5700, 12, 5, 75, 190, 'BD24Q6', '2027-03-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-19', name: 'Dettol Antiseptic Liquid', genericName: 'Chloroxylenol', brandName: 'Dettol',
+    manufacturerName: 'Reckitt', categoryId: 'cat-11', dosageForm: 'Syrup', strength: null,
+    packSize: '550ml', prescriptionClassification: 'OTC',
+    composition: 'Chloroxylenol IP 4.8% w/v antiseptic liquid', storage: 'Store in a cool place away from sunlight',
+    description: 'Household antiseptic for first aid and hygiene.',
+    restricted: false, offers: [
+      offer('list-19-1', 'sup-1', 'ABC Pharma Wholesaler', 'Varanasi', 9900, 10800, 18, 5, 45, 400, 'DT24R8', '2028-01-31'),
+    ],
+  }),
+  mkProduct({
+    id: 'prod-20', name: 'Sinarest Tablet', genericName: 'Paracetamol + Phenylephrine + CPM', brandName: 'Sinarest',
+    manufacturerName: 'Centaur Pharmaceuticals', categoryId: 'cat-9', dosageForm: 'Tablet', strength: null,
+    packSize: '10 Tablets', prescriptionClassification: 'OTC',
+    composition: 'Paracetamol 500 mg + Phenylephrine 5 mg + Chlorpheniramine 2 mg',
+    storage: 'Store below 30°C', description: 'Cold and sinus congestion relief.',
+    restricted: false, offers: [
+      offer('list-20-1', 'sup-2', 'XYZ Distributors', 'Varanasi', 3100, 3500, 12, 10, 45, 280, 'SN24S1', '2027-02-28'),
+    ],
+  }),
+];
+
+/* Fixture helpers — the same shape the API returns, built compactly. */
+function offer(
+  listingId: string, supplierId: string, supplierName: string, supplierCity: string,
+  sellingPrice: number, mrpReference: number, taxRate: number, minimumOrderQuantity: number,
+  leadTimeMinutes: number, sellableQuantity: number, batchNumber: string, expiryDate: string,
+): SupplierOffer {
+  return {
+    listingId, supplierId, supplierName, supplierCity, sellingPrice, mrpReference, taxRate,
+    minimumOrderQuantity, leadTimeMinutes, sellableQuantity, batchNumber, expiryDate,
+  };
+}
+
+function mkProduct(input: {
+  id: string; name: string; genericName: string; brandName: string; manufacturerName: string;
+  categoryId: string; dosageForm: string; strength: string | null; packSize: string;
+  prescriptionClassification: string; composition: string; storage: string; description: string;
+  restricted: boolean; offers: SupplierOffer[];
+}): MockProductData {
+  const summary: ProductSummary = {
+    id: input.id, name: input.name, genericName: input.genericName, brandName: input.brandName,
+    manufacturerName: input.manufacturerName, categoryId: input.categoryId,
+    dosageForm: input.dosageForm, strength: input.strength, packSize: input.packSize,
+    prescriptionClassification: input.prescriptionClassification,
+    supplierCount: input.offers.length,
+    minPrice: Math.min(...input.offers.map((o) => o.sellingPrice)),
+    maxPrice: Math.max(...input.offers.map((o) => o.sellingPrice)),
+    sellableQuantity: input.offers.reduce((total, o) => total + o.sellableQuantity, 0),
+    inStock: input.offers.some((o) => o.sellableQuantity > 0),
+  };
+  const detail: ProductDetail = {
+    id: input.id, name: input.name,
+    slug: input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    genericName: input.genericName, brandName: input.brandName,
+    compositionSummary: input.composition, strength: input.strength, packSize: input.packSize,
+    packUnit: 'Pack', prescriptionClassification: input.prescriptionClassification,
+    storageRequirements: input.storage, description: input.description,
+    category: { id: input.categoryId, name: categoryName(input.categoryId) },
+    manufacturerName: input.manufacturerName, dosageForm: input.dosageForm,
+    restricted: input.restricted, offers: input.offers,
+    updatedAt: '2025-02-15T09:00:00Z',
+  };
+  return { summary, detail };
+}
+
+function categoryName(categoryId: string): string {
+  return MOCK_CATEGORIES.find((category) => category.id === categoryId)?.name ?? 'Catalogue';
+}
+
+MOCK_PRODUCTS.push(...EXTRA_MOCK_PRODUCTS);
+
+/* Preview housekeeping: recount each category from the fixture catalogue and
+   drop categories with no products, so the visual category surfaces mirror a
+   live catalogue rather than promising empty shelves. */
+(function pruneEmptyCategories() {
+  for (let index = MOCK_CATEGORIES.length - 1; index >= 0; index -= 1) {
+    const category = MOCK_CATEGORIES[index]!;
+    const count = MOCK_PRODUCTS.filter((product) => product.summary.categoryId === category.id).length;
+    if (count === 0) {
+      MOCK_CATEGORIES.splice(index, 1);
+    } else {
+      category.productCount = count;
+    }
+  }
+})();
+
+
 export const MOCK_USERS: Record<string, { password: string; principal: Principal }> = {
   'admin@bezzo.local': {
     password: 'Bezzo@12345',
@@ -895,6 +1133,102 @@ class MockStore {
 
 export const mockStore = new MockStore();
 
+/* Preview-only supplier fulfilment queue, shaped exactly like the API's rows. */
+export const MOCK_SUPPLIER_FULFILLMENTS = [
+  {
+    id: 'ful-mock-1',
+    orderId: 'ord-mock-1',
+    orderNumber: 'BZO-20250215-1042',
+    fulfillmentReference: 'BZO-20250215-1042-F1',
+    status: 'CREATED',
+    subtotal: 4200,
+    taxTotal: 504,
+    deliveryAllocation: 150,
+    total: 4854,
+    packageCount: 0,
+    itemCount: 4,
+    buyerTradeName: 'Sunrise Pharmacy',
+    deliveryLocality: 'Andheri West',
+    deliveryCity: 'Mumbai',
+    deliverySlotName: 'Morning',
+    acceptedAt: null,
+    packedAt: null,
+    readyAt: null,
+    collectedAt: null,
+    deliveredAt: null,
+    createdAt: '2025-02-15T08:12:00Z',
+  },
+  {
+    id: 'ful-mock-2',
+    orderId: 'ord-mock-2',
+    orderNumber: 'BZO-20250214-0931',
+    fulfillmentReference: 'BZO-20250214-0931-F1',
+    status: 'ACCEPTED',
+    subtotal: 11800,
+    taxTotal: 1416,
+    deliveryAllocation: 150,
+    total: 13366,
+    packageCount: 0,
+    itemCount: 9,
+    buyerTradeName: 'CityCare Meds',
+    deliveryLocality: 'Bandra',
+    deliveryCity: 'Mumbai',
+    deliverySlotName: 'Afternoon',
+    acceptedAt: '2025-02-14T10:02:00Z',
+    packedAt: null,
+    readyAt: null,
+    collectedAt: null,
+    deliveredAt: null,
+    createdAt: '2025-02-14T09:31:00Z',
+  },
+  {
+    id: 'ful-mock-3',
+    orderId: 'ord-mock-3',
+    orderNumber: 'BZO-20250213-0877',
+    fulfillmentReference: 'BZO-20250213-0877-F1',
+    status: 'READY_FOR_PICKUP',
+    subtotal: 6400,
+    taxTotal: 768,
+    deliveryAllocation: 150,
+    total: 7318,
+    packageCount: 3,
+    itemCount: 6,
+    buyerTradeName: 'Wellness Point',
+    deliveryLocality: 'Powai',
+    deliveryCity: 'Mumbai',
+    deliverySlotName: 'Morning',
+    acceptedAt: '2025-02-13T09:00:00Z',
+    packedAt: '2025-02-13T11:20:00Z',
+    readyAt: '2025-02-13T11:45:00Z',
+    collectedAt: null,
+    deliveredAt: null,
+    createdAt: '2025-02-13T08:40:00Z',
+  },
+  {
+    id: 'ful-mock-4',
+    orderId: 'ord-mock-4',
+    orderNumber: 'BZO-20250212-0812',
+    fulfillmentReference: 'BZO-20250212-0812-F1',
+    status: 'DELIVERED',
+    subtotal: 9200,
+    taxTotal: 1104,
+    deliveryAllocation: 150,
+    total: 10454,
+    packageCount: 4,
+    itemCount: 11,
+    buyerTradeName: 'Sunrise Pharmacy',
+    deliveryLocality: 'Andheri West',
+    deliveryCity: 'Mumbai',
+    deliverySlotName: 'Morning',
+    acceptedAt: '2025-02-12T08:55:00Z',
+    packedAt: '2025-02-12T10:30:00Z',
+    readyAt: '2025-02-12T11:00:00Z',
+    collectedAt: '2025-02-12T12:10:00Z',
+    deliveredAt: '2025-02-12T15:40:00Z',
+    createdAt: '2025-02-12T08:12:00Z',
+  },
+];
+
 export function handleMockRoute(
   path: string,
   method: string,
@@ -988,8 +1322,11 @@ export function handleMockRoute(
 
   if (norm === '/catalog/products' || norm === '/api/v1/catalog/products') {
     const q = (query.q ?? '').toLowerCase();
-    const cat = query.category;
+    // The real API accepts `categoryId` (and legacy `category` reads the same way here).
+    const cat = query.categoryId ?? query.category;
     const presc = query.prescriptionClassification;
+    const inStockOnly = query.inStockOnly === 'true';
+    const sort = query.sort ?? 'relevance';
 
     let filtered = MOCK_PRODUCTS.map((p) => p.summary);
     if (q) {
@@ -997,7 +1334,8 @@ export function handleMockRoute(
         (p) =>
           p.name.toLowerCase().includes(q) ||
           (p.genericName?.toLowerCase() || '').includes(q) ||
-          (p.brandName?.toLowerCase() || '').includes(q),
+          (p.brandName?.toLowerCase() || '').includes(q) ||
+          (p.manufacturerName?.toLowerCase() || '').includes(q),
       );
     }
     if (cat) {
@@ -1009,6 +1347,19 @@ export function handleMockRoute(
     if (presc) {
       filtered = filtered.filter((p) => p.prescriptionClassification === presc);
     }
+    if (inStockOnly) {
+      filtered = filtered.filter((p) => p.inStock);
+    }
+    if (sort === 'price_asc') {
+      filtered = [...filtered].sort((a, b) => (a.minPrice ?? 0) - (b.minPrice ?? 0));
+    } else if (sort === 'price_desc') {
+      filtered = [...filtered].sort((a, b) => (b.minPrice ?? 0) - (a.minPrice ?? 0));
+    } else if (sort === 'name_asc') {
+      filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sort === 'created_desc') {
+      // Deterministic "newest first" for the preview: reverse of catalogue order.
+      filtered = [...filtered].reverse();
+    }
 
     const page = parseInt(query.page || '1', 10);
     const pageSize = parseInt(query.pageSize || '12', 10);
@@ -1016,12 +1367,13 @@ export function handleMockRoute(
     const totalPages = Math.ceil(totalItems / pageSize) || 1;
     const items = filtered.slice((page - 1) * pageSize, page * pageSize);
 
+    // Mirrors the real API contract: the page payload is { items, pagination }.
     return {
       status: 200,
       payload: {
         success: true,
-        data: items,
-        meta: {
+        data: {
+          items,
           pagination: {
             page,
             pageSize,
@@ -1055,11 +1407,16 @@ export function handleMockRoute(
 
   if (norm === '/cart/items' || norm === '/api/v1/cart/items') {
     if (method === 'POST') {
-      const { listingId, quantity = 1 } = (body ?? {}) as { listingId?: string; quantity?: number };
+      const { supplierProductId, listingId, quantity = 1 } = (body ?? {}) as {
+        supplierProductId?: string;
+        listingId?: string;
+        quantity?: number;
+      };
+      const resolvedListingId = supplierProductId ?? listingId;
       let foundOffer: { offer: SupplierOffer; product: MockProductData } | null = null;
       for (const prod of MOCK_PRODUCTS) {
         for (const off of prod.detail.offers) {
-          if (off.listingId === listingId) {
+          if (off.listingId === resolvedListingId) {
             foundOffer = { offer: off, product: prod };
             break;
           }
@@ -1375,6 +1732,34 @@ export function handleMockRoute(
   }
   if (norm === '/me/security' || norm === '/api/v1/me/security') {
     return { status: 200, payload: { success: true, data: MOCK_SECURITY_OVERVIEW } };
+  }
+
+  // 8. Supplier portal — fulfilment queue (preview fixtures shaped exactly like the API rows)
+  if (norm === '/supplier/fulfillments' || norm === '/api/v1/supplier/fulfillments') {
+    const status = query.status;
+    const page = parseInt(query.page || '1', 10);
+    const pageSize = parseInt(query.pageSize || '15', 10);
+    let rows = MOCK_SUPPLIER_FULFILLMENTS;
+    if (status) {
+      rows = rows.filter((row) => row.status === status);
+    }
+    const total = rows.length;
+    const start = (page - 1) * pageSize;
+    return {
+      status: 200,
+      payload: {
+        success: true,
+        data: { rows: rows.slice(start, start + pageSize), total },
+      },
+    };
+  }
+  if (norm.startsWith('/supplier/fulfillments/') || norm.startsWith('/api/v1/supplier/fulfillments/')) {
+    const fid = norm.split('/supplier/fulfillments/')[1]?.replace('/api/v1', '');
+    const found = MOCK_SUPPLIER_FULFILLMENTS.find((row) => row.id === fid);
+    if (found) {
+      return { status: 200, payload: { success: true, data: found } };
+    }
+    return { status: 200, payload: { success: true, data: MOCK_SUPPLIER_FULFILLMENTS[0] ?? null } };
   }
 
   // 8. Supplier portal
