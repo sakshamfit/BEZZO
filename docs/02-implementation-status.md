@@ -327,6 +327,11 @@ database reaches the intended grants by running 0015 then 0016),
 
 ### 5.1 Evidence (commands actually run against the live stack)
 
+The two end-to-end scripts quoted below are **in the repository** (`scripts/verify/`), not in `/tmp`:
+`payments-e2e.py` (capture → duplicate → forged signature → retry → refunds, 33 assertions) and
+`reservations-e2e.py` (committed COD hold, forced expiry, cancel, 10 assertions). Both read
+`BEZZO_API_URL` and `.env`, and both mutate development data.
+
 ```
 # supplier inventory — the endpoint that used to commit the change and then return 500
 POST /api/v1/supplier/inventory/:id/adjust   (no key)        -> 400 IDEMPOTENCY_KEY_REQUIRED
@@ -364,7 +369,7 @@ buyer2 POST /api/v1/orders -> 409 INSUFFICIENT_STOCK
 inventory afterwards: available=1 reserved=1 sellable=0, active reservations on that unit = 1
 ```
 
-The full rewrite of that flow is verified by `/tmp/orders-verify.py` — **33/33 checks pass** against the
+The full rewrite of that flow was verified against the
 live stack (2026-09-20), covering: two offers from two suppliers in one basket; quote placeable with
 `supplierCount=2` and no order written; placement producing `BZ-YYYY-NNNNNN` with **two** fulfilments and
 one ACTIVE reservation per line; pricing identical between quote and order; replay of the same
@@ -464,17 +469,21 @@ curl -s localhost:4000/health | head -c 200
 curl -s -X POST localhost:4000/api/v1/cart/items -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" -H "idempotency-key: $(uuidgen)" \
   -d '{"supplierProductId":"<listing-id>","quantity":1}'
-# checkout → order → cancel → race, end to end against the live stack (33 assertions)
-python3 /tmp/orders-verify.py
+# checkout → order → cancel, end to end against the live stack
+curl -s -X POST localhost:4000/api/v1/checkout/quote -H 'content-type: application/json' \
+  -H "authorization: Bearer $TOKEN" -d '{"deliveryAddressId":"<address-id>","deliveryMode":"INSTANT"}'
+curl -s -X POST localhost:4000/api/v1/orders -H 'content-type: application/json' \
+  -H "authorization: Bearer $TOKEN" -H "idempotency-key: $(uuidgen)" \
+  -d '{"deliveryAddressId":"<address-id>","deliveryMode":"INSTANT","paymentMethod":"UPI"}'
 # payments: capture → duplicate → forged signature → retry → refunds (33 assertions)
-python3 /tmp/payments-verify.py
+python3 scripts/verify/payments-e2e.py
 # reservations across the payment boundary: committed COD hold, forced expiry, cancel (10 assertions)
-python3 /tmp/cod-reservation-check.py
+python3 scripts/verify/reservations-e2e.py
 # integration suites (black-box against the booted API, 21 tests, ~50 s)
 corepack pnpm --filter @bezzo/api test:integration
 # OpenAPI export after any route change
 corepack pnpm --filter @bezzo/api openapi:export
-# partner applications: public submit + operations triage (python3 /tmp/apply-flow.py is the full run)
+# partner applications: public submit + operations triage (curl equivalent of the old apply-flow.py)
 curl -s localhost:4000/api/v1/applications/routing
 curl -s -X POST localhost:4000/api/v1/applications -H 'content-type: application/json' \
   -H "idempotency-key: $(python3 -c 'import uuid;print(uuid.uuid4())')" \

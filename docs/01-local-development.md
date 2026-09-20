@@ -134,6 +134,20 @@ corepack pnpm --filter @bezzo/api test:integration -- test/security/rbac.spec.ts
 The suite uses the seeded development accounts (`Bezzo@12345`) and mutates real data, so run it against a
 development database — never against staging or production.
 
+### End-to-end verification scripts
+
+Two scripts print the whole exchange rather than asserting it, which is what you want when a failure has
+to be *read*. Both live in `scripts/verify/`, both take `BEZZO_API_URL` (default `http://127.0.0.1:4000`)
+and both read `DATABASE_URL` from `.env` when the environment does not set it.
+
+```bash
+python3 scripts/verify/payments-e2e.py        # 33 assertions: capture, duplicate, forged signature, retry, refunds
+python3 scripts/verify/reservations-e2e.py    # 10 assertions, ~60 s: committed COD hold survives a real job cycle
+```
+
+`reservations-e2e.py` waits for a full `reservations.expire` cycle (30 s cadence) on purpose — the claim
+is a negative one, that a committed reservation is *not* released, so it must observe the real job.
+
 ## 5. OpenAPI document
 
 ```bash
