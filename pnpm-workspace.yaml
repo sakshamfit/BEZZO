@@ -1,0 +1,15 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# A single Fastify version must exist in the workspace: @nestjs/platform-fastify brings its own
+# transitive copy, and two copies produce incompatible request/reply types at the adapter boundary.
+overrides:
+  fastify: 5.12.5
+
+# Dependency build scripts require explicit approval (pnpm supply-chain policy).
+# `@scarf/scarf` is telemetry shipped by a transitive dependency — it must never run.
+allowBuilds:
+  '@scarf/scarf': false
+  # Next.js image optimisation uses sharp; the native build is approved and executed locally.
+  sharp: true

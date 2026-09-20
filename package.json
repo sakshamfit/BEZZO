@@ -1,0 +1,43 @@
+{
+  "name": "bezzo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BEZZO \u2014 B2B pharmaceutical marketplace (web, Android, iOS, operational dashboards)",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "dev:api": "pnpm --filter @bezzo/api dev",
+    "dev:web": "pnpm --filter @bezzo/web dev",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "test:concurrency": "pnpm --filter @bezzo/api test:concurrency",
+    "db:migrate": "pnpm --filter @bezzo/database migrate",
+    "db:status": "pnpm --filter @bezzo/database status",
+    "db:seed": "pnpm --filter @bezzo/database seed",
+    "db:reset": "pnpm --filter @bezzo/database reset",
+    "db:verify": "pnpm --filter @bezzo/database verify",
+    "openapi:export": "pnpm --filter @bezzo/api openapi:export",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "printWidth": 100,
+    "trailingComma": "all",
+    "arrowParens": "always"
+  }
+}
