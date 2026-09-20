@@ -28,7 +28,11 @@ export class PermissionsGuard implements CanActivate {
       throw new DomainError(ErrorCode.AUTH_REQUIRED, 'Authentication is required for this resource');
     }
 
-    const requiredRoles = this.reflector.getAllAndOverride<RoleCode[]>([ROLES_KEY], [
+    // NOTE: the metadata key is a plain string/symbol. Passing an array of keys made the lookup miss
+    // silently and disabled every role/permission check in the platform (found by the negative RBAC
+    // matrix in `docs/`): the guards returned true and only the service-level ownership checks stopped
+    // cross-tenant access. Keep this signature — it is covered by the RBAC matrix test.
+    const requiredRoles = this.reflector.getAllAndOverride<RoleCode[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -41,7 +45,7 @@ export class PermissionsGuard implements CanActivate {
       }
     }
 
-    const requiredPermissions = this.reflector.getAllAndOverride<string[]>([PERMISSIONS_KEY], [
+    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);

@@ -107,6 +107,33 @@ curl -s -X POST http://127.0.0.1:4000/api/v1/auth/login \
   -d '{"identifier":"admin@bezzo.local","password":"Bezzo@12345"}' | head -c 400
 ```
 
+## 4b. Integration tests
+
+The integration suite is **black-box**: it drives a booted API over HTTP instead of booting the Nest
+application inside Jest. That is deliberate — the guards, the raw-body capture that webhook signatures
+depend on, the request-context hook and the global filters are all installed by the bootstrap, so an
+in-process test would exercise a slightly different wiring than the one that ships.
+
+```bash
+# 1. the API must be running (see above); point the suite elsewhere with BEZZO_API_URL
+curl -s http://127.0.0.1:4000/health
+
+# 2. run everything (~50 s: one test waits a full 30 s job cycle on purpose)
+corepack pnpm --filter @bezzo/api test:integration
+
+# one file
+corepack pnpm --filter @bezzo/api test:integration -- test/security/rbac.spec.ts
+```
+
+| File | What it proves |
+| --- | --- |
+| `test/security/rbac.spec.ts` | The negative RBAC matrix: no non-admin role reaches an admin surface, no buyer reaches supplier surfaces, no token-less caller reaches anything. It exists because a metadata-key bug had made every `@Roles`/`@RequirePermissions` inert. |
+| `test/payments/payments.spec.ts` | Capture confirms the order, a duplicate delivery is answered `DUPLICATE` and changes nothing, a forged signature is refused with 400 for both a new and an already-seen event id, failure keeps the order payable, retry captures, full/partial refunds move the state, over-refund and buyer refund are refused, and the backoffice trail is readable only with the permission. |
+| `test/orders/reservation-commitment.spec.ts` | A cash-on-delivery reservation is committed with no expiry, survives a real expiry-job cycle, and returns its units when the order is cancelled; a prepaid reservation is committed by the capture. |
+
+The suite uses the seeded development accounts (`Bezzo@12345`) and mutates real data, so run it against a
+development database — never against staging or production.
+
 ## 5. OpenAPI document
 
 ```bash

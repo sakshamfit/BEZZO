@@ -28,13 +28,19 @@ import { NotificationService } from '../../infrastructure/notifications/notifica
 import { SearchService } from '../../infrastructure/search/search.service';
 import { AuditService } from '../../infrastructure/audit/audit.service';
 import { MetricsService } from '../../infrastructure/metrics/metrics.service';
+import { PaymentsModule } from '../payments/payments.module';
+import { PaymentsService } from '../payments/payments.service';
 import { InjectLogger, BEZZO_LOGGER, type BezzoLogger } from '../../infrastructure/logger/logger.module';
+
+/** Anything that can run a query: the pool or the transaction client. */
+type Queryable = { query: DatabaseType['query'] };
 
 const OUTBOX_DISPATCH_INTERVAL_MS = 1_000;
 const NOTIFICATION_DISPATCH_INTERVAL_MS = 5_000;
 const SEARCH_INDEX_INTERVAL_MS = 15_000;
 const IDEMPOTENCY_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const RESERVATION_EXPIRY_INTERVAL_MS = 30_000;
+const PAYMENT_RECONCILE_INTERVAL_MS = 60_000;
 
 @Injectable()
 export class WorkerJobs implements OnModuleInit {
@@ -48,6 +54,7 @@ export class WorkerJobs implements OnModuleInit {
     private readonly idempotency: IdempotencyService,
     private readonly audit: AuditService,
     private readonly metrics: MetricsService,
+    private readonly payments: PaymentsService,
     @InjectLogger() private readonly logger: BezzoLogger,
   ) {}
 
@@ -108,6 +115,18 @@ export class WorkerJobs implements OnModuleInit {
       },
     });
 
+    // Lost webhooks are recovered by asking the provider directly. Both roads end in the same
+    // transition function, so a payment cannot end up "paid" by one path and "pending" by the other.
+    this.scheduler.register({
+      name: 'payments.reconcile',
+      intervalMs: PAYMENT_RECONCILE_INTERVAL_MS,
+      lockKey: 0x0b2_0006,
+      handler: async () => {
+        const outcome = await this.payments.reconcileStalePayments();
+        return { itemsProcessed: outcome.checked, itemsFailed: outcome.failed, applied: outcome.applied };
+      },
+    });
+
     // Timers are only armed after every job has been registered, otherwise a job registered later
     // would be scheduled twice (once by registration, once by start).
     this.scheduler.start();
@@ -123,10 +142,26 @@ export class WorkerJobs implements OnModuleInit {
    * Each release is a conditional UPDATE, so a concurrent confirmation and expiry can never both win.
    */
   private async releaseExpiredReservations(): Promise<number> {
-    const expired = await this.database.rows<{ id: string; inventory_id: string; quantity: number }>(
-      `SELECT id, inventory_id, quantity FROM inventory_reservations
-        WHERE status = 'ACTIVE' AND expires_at <= now()
-        ORDER BY expires_at
+    const expired = await this.database.rows<{
+      id: string;
+      order_id: string | null;
+      inventory_id: string;
+      quantity: number;
+    }>(
+      // A reservation is only releasable while its order is still waiting for money. A committed
+      // reservation is CONFIRMED (never ACTIVE), and this predicate is the second belt: an order that
+      // has been confirmed or already cancelled must never lose stock to the payment timer, whatever
+      // state its reservation rows are in.
+      `SELECT r.id, r.order_id, r.inventory_id, r.quantity
+         FROM inventory_reservations r
+         LEFT JOIN orders o ON o.id = r.order_id
+        WHERE r.status = 'ACTIVE'
+          AND r.expires_at IS NOT NULL
+          AND r.expires_at <= now()
+          AND (r.order_id IS NULL
+               OR o.id IS NULL
+               OR (o.status = 'PENDING_PAYMENT' AND o.payment_status IN ('PENDING', 'FAILED')))
+        ORDER BY r.expires_at
         LIMIT $1`,
       [this.config.WORKER_BATCH_SIZE],
     );
@@ -141,18 +176,20 @@ export class WorkerJobs implements OnModuleInit {
         );
         if ((claimed.rowCount ?? 0) === 0) return false;
 
+        // Placeholders are numbered densely: an unreferenced `$n` cannot be typed by Postgres and the
+        // whole statement is rejected, so the quantity is `$2` here and nowhere else.
         const updated = await client.query<{ available_quantity: number; reserved_quantity: number }>(
           `UPDATE inventories
-              SET reserved_quantity = reserved_quantity - $3,
+              SET reserved_quantity = reserved_quantity - $2,
                   version = version + 1,
                   status = CASE
                     WHEN status IN ('QUARANTINED','BLOCKED','RECALLED','EXPIRED','DEPLETED') THEN status
                     WHEN status = 'OUT_OF_STOCK' THEN 'AVAILABLE'
                     ELSE status
                   END
-            WHERE id = $1 AND reserved_quantity >= $3
+            WHERE id = $1 AND reserved_quantity >= $2
             RETURNING available_quantity, reserved_quantity`,
-          [reservation.inventory_id, reservation.id, reservation.quantity],
+          [reservation.inventory_id, reservation.quantity],
         );
         const row = updated.rows[0];
         if (!row) throw new Error(`Reservation ${reservation.id} could not be released: reserved_quantity invariant`);
@@ -169,6 +206,10 @@ export class WorkerJobs implements OnModuleInit {
           resourceId: reservation.id,
           metadata: { quantity: reservation.quantity },
         });
+
+        if (reservation.order_id) {
+          await this.closeUnpaidOrderWithoutReservations(client, reservation.order_id);
+        }
         return true;
       });
       if (outcome) {
@@ -177,6 +218,93 @@ export class WorkerJobs implements OnModuleInit {
       }
     }
     return released;
+  }
+
+  /**
+   * An order whose reservations have all lapsed can no longer be fulfilled, so it must not stay payable:
+   * once its last reservation is released, an order that is still waiting for payment is cancelled with
+   * its lines, fulfilments and payment. Guarded twice — the order must be `PENDING_PAYMENT` with no
+   * captured money, and the `UPDATE ... RETURNING` makes the transition happen exactly once even if two
+   * workers release the last two reservations at the same instant.
+   */
+  private async closeUnpaidOrderWithoutReservations(client: Queryable, orderId: string): Promise<void> {
+    const outstanding = await client.query<{ count: string }>(
+      `SELECT count(*)::TEXT AS count FROM inventory_reservations WHERE order_id = $1 AND status = 'ACTIVE'`,
+      [orderId],
+    );
+    if (Number(outstanding.rows[0]?.count ?? 0) > 0) return;
+
+    // `buyers.id` is a trading profile; notifications address the *user*, who owns the login and the
+    // device tokens — hence the correlated lookup in RETURNING.
+    const closed = await client.query<{
+      id: string;
+      order_number: string;
+      buyer_id: string;
+      buyer_user_id: string | null;
+    }>(
+      `UPDATE orders
+          SET status = 'CANCELLED', payment_status = 'CANCELLED', cancelled_at = now(),
+              cancellation_reason = $2, updated_at = now()
+        WHERE id = $1 AND status = 'PENDING_PAYMENT' AND payment_status IN ('PENDING', 'FAILED')
+    RETURNING id, order_number, buyer_id,
+              (SELECT b.user_id FROM buyers b WHERE b.id = buyer_id) AS buyer_user_id`,
+      [orderId, 'Reservation expired before the payment was captured'],
+    );
+    const order = closed.rows[0];
+    if (!order) return;
+
+    await client.query(
+      `UPDATE order_items SET status = 'CANCELLED', updated_at = now() WHERE order_id = $1 AND status <> 'CANCELLED'`,
+      [orderId],
+    );
+    await client.query(
+      `UPDATE fulfillment_items SET status = 'CANCELLED', updated_at = now()
+        WHERE fulfillment_id IN (SELECT id FROM fulfillments WHERE order_id = $1) AND status <> 'CANCELLED'`,
+      [orderId],
+    );
+    await client.query(
+      `UPDATE fulfillments SET status = 'CANCELLED', cancelled_at = now(),
+              cancellation_reason = 'Reservation expired before payment', updated_at = now()
+        WHERE order_id = $1 AND status NOT IN ('CANCELLED','DELIVERED','RETURNED')`,
+      [orderId],
+    );
+    await client.query(
+      `UPDATE payments SET status = 'CANCELLED', updated_at = now() WHERE order_id = $1 AND status = 'PENDING'`,
+      [orderId],
+    );
+    await client.query(
+      `INSERT INTO order_status_history (order_id, from_status, to_status, reason, actor_type, actor_id, request_id)
+       VALUES ($1, 'PENDING_PAYMENT', 'CANCELLED', $2, 'SYSTEM', NULL, NULL)`,
+      [orderId, 'Payment window elapsed — reserved stock was released'],
+    );
+
+    await this.events.emit(client, {
+      eventName: 'OrderCancelled',
+      aggregateType: 'order',
+      aggregateId: orderId,
+      payload: {
+        orderNumber: order.order_number,
+        buyerId: order.buyer_id,
+        reason: 'PAYMENT_TIMEOUT',
+      },
+    });
+    await this.notifications.queue(client, {
+      userId: order.buyer_user_id ?? order.buyer_id,
+      type: 'order.payment_timeout',
+      title: `Order ${order.order_number} was cancelled`,
+      body: 'The stock reserved for this order was released because the payment was not completed in time. The items can be ordered again.',
+      channels: ['IN_APP'],
+      referenceType: 'order',
+      referenceId: orderId,
+      payload: { orderNumber: order.order_number, reason: 'PAYMENT_TIMEOUT' },
+    });
+    await this.audit.record(client, {
+      action: 'order.payment_timeout_cancelled',
+      resourceType: 'order',
+      resourceId: orderId,
+      metadata: { orderNumber: order.order_number, reason: 'PAYMENT_TIMEOUT' },
+    });
+    this.logger.warnWith({ orderId, orderNumber: order.order_number }, 'unpaid order cancelled after its reservation expired');
   }
 
   /** Projects queued product documents into the search index, with retry backoff. */
@@ -291,6 +419,9 @@ export class WorkerJobs implements OnModuleInit {
 }
 
 @Module({
+  // The reconciliation job runs the payment module's own transition code rather than re-implementing
+  // "what does the provider say" in the worker.
+  imports: [PaymentsModule],
   providers: [WorkerJobs],
 })
 export class WorkerModule {}

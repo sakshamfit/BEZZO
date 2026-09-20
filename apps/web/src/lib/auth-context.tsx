@@ -21,7 +21,15 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { API_BROWSER_BASE, ApiError, apiRequest, newIdempotencyKey } from './api';
+import {
+  API_BROWSER_BASE,
+  ApiError,
+  apiRequest,
+  apiRequestEnvelope,
+  newIdempotencyKey,
+  type ApiRequestOptions,
+  type SuccessEnvelope,
+} from './api';
 
 export interface Principal {
   id: string;
@@ -69,7 +77,9 @@ interface AuthContextValue {
    * The `Idempotency-Key` is created here and reused by both attempts, so a mutation that was
    * interrupted by an expired token can never execute twice on the server.
    */
-  request: <T>(path: string, options?: { method?: string; body?: unknown; idempotencyKey?: string }) => Promise<T>;
+  request: <T>(path: string, options?: ApiRequestOptions) => Promise<T>;
+  /** Same guarantees as `request`, but returns the envelope so list screens can read `meta`. */
+  requestEnvelope: <T>(path: string, options?: ApiRequestOptions) => Promise<SuccessEnvelope<T>>;
   hasRole: (...roles: string[]) => boolean;
   hasPermission: (...permissions: string[]) => boolean;
 }
@@ -193,8 +203,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return promise;
   }, [persist]);
 
-  const request = useCallback(
-    async <T,>(path: string, options: { method?: string; body?: unknown; idempotencyKey?: string } = {}): Promise<T> => {
+  const requestEnvelope = useCallback(
+    async <T,>(path: string, options: ApiRequestOptions = {}): Promise<SuccessEnvelope<T>> => {
       const current = sessionRef.current;
       if (!current) throw new ApiError('AUTH_REQUIRED', 'Please sign in to continue', 401);
 
@@ -206,17 +216,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
 
       try {
-        return await apiRequest<T>(path, { ...options, token: active.accessToken, idempotencyKey });
+        return await apiRequestEnvelope<T>(path, { ...options, token: active.accessToken, idempotencyKey });
       } catch (error) {
         if (error instanceof ApiError && (error.status === 401 || error.code === 'TOKEN_EXPIRED')) {
           const refreshed = await rotate();
           if (!refreshed) throw error;
-          return apiRequest<T>(path, { ...options, token: refreshed.accessToken, idempotencyKey });
+          return apiRequestEnvelope<T>(path, { ...options, token: refreshed.accessToken, idempotencyKey });
         }
         throw error;
       }
     },
     [rotate],
+  );
+
+  const request = useCallback(
+    async <T,>(path: string, options: ApiRequestOptions = {}): Promise<T> =>
+      (await requestEnvelope<T>(path, options)).data,
+    [requestEnvelope],
   );
 
   const refreshPrincipal = useCallback(async () => {
@@ -234,6 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refreshPrincipal,
       request,
+      requestEnvelope,
       hasRole: (...roles: string[]) => {
         const held = session?.principal.roles ?? [];
         return roles.some((role) => held.includes(role));

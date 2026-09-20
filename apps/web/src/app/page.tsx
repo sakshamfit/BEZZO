@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { serverGet } from '../lib/api';
-import type { HealthSnapshot, VersionSnapshot } from '../lib/types';
+import type { ApplicationRouting, HealthSnapshot, VersionSnapshot } from '../lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,13 +12,17 @@ export const dynamic = 'force-dynamic';
  * "status unavailable" panel.
  */
 export default async function HomePage() {
-  const [healthEnvelope, versionEnvelope] = await Promise.all([
+  const [healthEnvelope, versionEnvelope, routingEnvelope] = await Promise.all([
     serverGet<HealthSnapshot>('/health'),
     serverGet<VersionSnapshot>('/version'),
+    // The partner-intake WhatsApp line is configuration, so it is read, never typed into the markup.
+    serverGet<ApplicationRouting>('/applications/routing'),
   ]);
 
   const health = healthEnvelope?.data ?? null;
   const version = versionEnvelope?.data ?? null;
+  const routing = routingEnvelope?.data ?? null;
+  const applyLine = routing?.whatsappNumber ?? null;
 
   const stages = [
     { title: 'Order', detail: 'The retailer places a single order; pricing and stock are validated server-side.' },
@@ -55,9 +59,13 @@ export default async function HomePage() {
     },
   ];
 
+  /* One intake for every partnership; every submission is routed to the operations WhatsApp line. */
+  const applyHref = '/apply';
+
   return (
     <>
       <section className="hero">
+        <p className="eyebrow">Healthcare. Simplified.</p>
         <h1>Verified wholesalers. Verified pharmacies. One controlled supply chain.</h1>
         <p>
           BEZZO is the B2B pharmaceutical marketplace between licensed wholesalers and licensed medical
@@ -65,16 +73,44 @@ export default async function HomePage() {
           auditable stages.
         </p>
         <div className="row">
-          <Link className="btn primary" href="/catalog">
-            Browse the catalogue
+          <Link className="btn primary" href="/apply">
+            Apply to partner
           </Link>
-          <Link className="btn" href="/register">
-            Register your business
+          <Link className="btn" href="/catalog">
+            Browse the catalogue
           </Link>
           <Link className="btn" href="/login">
             Sign in
           </Link>
         </div>
+
+        <div className="hero-stat-row">
+          <div className="hero-stat">
+            <div className="label">Verification</div>
+            <div className="value">Human-reviewed</div>
+          </div>
+          <div className="hero-stat">
+            <div className="label">Applications routed to</div>
+            <div className="value mono">{applyLine ?? 'Operations WhatsApp line'}</div>
+          </div>
+          <div className="hero-stat">
+            <div className="label">Pickup</div>
+            <div className="value">Picker → Bezzo hub</div>
+          </div>
+          <div className="hero-stat">
+            <div className="label">Final delivery</div>
+            <div className="value">Hub → your counter</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
+        <p className="label-sm">The journey of one order</p>
+        <ul className="stage-track" style={{ marginTop: 'var(--space-sm)' }}>
+          {stages.map((stage) => (
+            <li key={stage.title}>{stage.title}</li>
+          ))}
+        </ul>
       </section>
 
       <section className="grid grid-4" style={{ marginBottom: 'var(--space-6)' }}>
@@ -170,7 +206,7 @@ export default async function HomePage() {
         </div>
         <div className="grid grid-4">
           {audiences.map((audience) => (
-            <div className="card" key={audience.title}>
+            <div className="card interactive" key={audience.title}>
               <h3>{audience.title}</h3>
               <p className="muted small">{audience.body}</p>
               <Link className="btn small" href={audience.href}>
@@ -178,6 +214,21 @@ export default async function HomePage() {
               </Link>
             </div>
           ))}
+        </div>
+
+        <div className="card feature spread" style={{ marginTop: 'var(--space-lg)' }}>
+          <div>
+            <p className="label-sm">Not on the platform yet?</p>
+            <h2 style={{ marginBottom: 'var(--space-xs)' }}>Apply as a wholesaler, store, picker or partner</h2>
+            <p className="muted" style={{ margin: 0, maxWidth: '60ch' }}>
+              One form, one reference. Every application is delivered to our operations line on WhatsApp
+              {applyLine ? <strong> {applyLine}</strong> : ' for human verification'} — no automatic
+              approvals.
+            </p>
+          </div>
+          <Link className="btn accent" href={applyHref}>
+            Start an application
+          </Link>
         </div>
       </section>
 

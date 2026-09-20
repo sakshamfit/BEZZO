@@ -906,6 +906,7 @@
     },
     "/api/v1/checkout/quote": {
       "post": {
+        "description": "The same validation and pricing the order endpoint runs, without reserving stock, writing an order or touching the gateway. A preview must never hold the last unit.",
         "operationId": "CheckoutController_quote",
         "parameters": [],
         "responses": {
@@ -913,7 +914,7 @@
             "description": ""
           }
         },
-        "summary": "Server-calculated totals and validation for the current basket",
+        "summary": "Price the basket and validate the address, delivery mode, slot and serviceability (read-only)",
         "tags": [
           "checkout"
         ]
@@ -921,12 +922,13 @@
     },
     "/api/v1/orders": {
       "post": {
-        "operationId": "OrdersController_place",
+        "description": "Server-authoritative pricing and a guarded reservation per line (`available - reserved >= quantity`), so the last unit can only ever be sold once. The gateway is called after the commit; a provider failure is recorded on the payment and returned with the order instead of faking a failure.",
+        "operationId": "OrdersController_placeOrder",
         "parameters": [
           {
             "name": "Idempotency-Key",
             "in": "header",
-            "description": "Retrying with the same key returns the original order instead of placing a second one.",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
             "required": true,
             "schema": {
               "type": "string"
@@ -938,7 +940,7 @@
             "description": ""
           }
         },
-        "summary": "Place an order from the current basket (reserves stock, creates payments)",
+        "summary": "Place an order: price, reserve stock, split into per-supplier fulfilments, then create the payment intent",
         "tags": [
           "orders"
         ]
@@ -951,7 +953,7 @@
             "description": ""
           }
         },
-        "summary": "The buyer's own order history",
+        "summary": "The buyer's own orders with filters and bounded pagination",
         "tags": [
           "orders"
         ]
@@ -975,7 +977,7 @@
             "description": ""
           }
         },
-        "summary": "Order detail with lines, per-supplier fulfillments, payment and timeline",
+        "summary": "Order detail: lines, per-supplier fulfilments, payment and status timeline",
         "tags": [
           "orders"
         ]
@@ -983,6 +985,7 @@
     },
     "/api/v1/orders/{orderId}/cancel": {
       "post": {
+        "description": "Idempotent in effect: the release only matches ACTIVE reservations, so a retried cancel can never restock twice. A paid order is refused — money movement needs the refund command, not a cancel.",
         "operationId": "OrdersController_cancel",
         "parameters": [
           {
@@ -1004,13 +1007,290 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Cancel an order while it is still cancellable and release its reservations",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/v1/webhooks/payments/{provider}": {
+      "post": {
+        "description": "Verifies the HMAC over the raw request bytes, stores the call as evidence, deduplicates it by the provider event id, and applies the reported payment state inside a transaction. Returns 200 for a first delivery, a duplicate and an event the platform ignores, so the gateway stops retrying; a forged signature is answered with 400 and is retained with signature_valid=false.",
+        "operationId": "PaymentWebhookController_receive",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Inbound gateway webhook (signature-verified, replay-protected)",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/{paymentId}/retry": {
+      "post": {
+        "description": "Reuses the same payment row (an order can never have two live payments), records a new gateway attempt and asks the provider for a fresh intent with an attempt-scoped idempotency key.",
+        "operationId": "PaymentsController_retry",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
           "201": {
             "description": ""
           }
         },
-        "summary": "Cancel an order that has not been fulfilled and release its reservations",
+        "summary": "Retry the payment for an order that is still awaiting payment",
         "tags": [
-          "orders"
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/{paymentId}/refund": {
+      "post": {
+        "description": "Records the refund before calling the gateway, refuses more than the captured amount minus what was already returned, and only moves `payments.refunded_amount` on the provider’s own answer.",
+        "operationId": "PaymentsController_refund",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Refund a captured payment in full or in part (backoffice)",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/orders/{orderId}/refunds": {
+      "get": {
+        "operationId": "OrderRefundsController_list",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Refunds recorded against an order — the caller’s own, or any order for payment-read operators",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/admin/payments": {
+      "get": {
+        "description": "Read-only money trail for the operations backoffice. Provider payloads and buyer banking data are never returned — only the identifiers needed to talk to the gateway.",
+        "operationId": "AdminPaymentsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Search payments (order number, buyer, gateway reference, state)",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/admin/payments/{paymentId}": {
+      "get": {
+        "description": "The evidence log records every inbound webhook — its digest, whether the signature verified and how it was processed — so “the gateway told us X” is a stored fact rather than a recollection.",
+        "operationId": "AdminPaymentsController_detail",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "One payment with its attempts, refunds and webhook evidence log",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/dev/payments/{paymentId}/mock-webhook": {
+      "post": {
+        "description": "Builds the payload with the mock provider’s signer and delivers it through the production webhook handler, so the whole verification pipeline is exercised rather than bypassed.",
+        "operationId": "MockPaymentsController_simulate",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Development only: sign and deliver a mock gateway webhook for a payment",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/applications": {
+      "post": {
+        "operationId": "ApplicationsController_submit",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Submit a partner application (supplier, picker, retailer or other)",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/v1/applications/routing": {
+      "get": {
+        "operationId": "ApplicationsController_routing",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Where applications are delivered (WhatsApp business line)",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/v1/admin/applications": {
+      "get": {
+        "operationId": "AdminApplicationsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Partner application queue with status counts",
+        "tags": [
+          "admin-applications"
+        ]
+      }
+    },
+    "/api/v1/admin/applications/summary": {
+      "get": {
+        "operationId": "AdminApplicationsController_summary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Application counters for the operations queue header",
+        "tags": [
+          "admin-applications"
+        ]
+      }
+    },
+    "/api/v1/admin/applications/{applicationId}": {
+      "patch": {
+        "operationId": "AdminApplicationsController_update",
+        "parameters": [
+          {
+            "name": "applicationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Triage a partner application",
+        "tags": [
+          "admin-applications"
         ]
       }
     },

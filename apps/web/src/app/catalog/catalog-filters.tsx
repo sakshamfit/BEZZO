@@ -113,7 +113,7 @@ export function CatalogFilters({
                 borderRadius: 'var(--radius-sm)',
                 padding: 'var(--space-2)',
                 background: 'var(--bg-elevated)',
-                boxShadow: 'var(--shadow-md)',
+                boxShadow: 'var(--elevation-2)',
               }}
             >
               {suggestions.map((suggestion) => (

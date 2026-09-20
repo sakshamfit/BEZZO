@@ -139,10 +139,26 @@ const envSchema = z
     PICKER_ALLOW_PARALLEL_OFFERS: booleanish.default(false),
     PICKER_PARALLEL_OFFER_COUNT: integerish(3),
 
+    // ---- Partner applications
+    /**
+     * Operations WhatsApp line that receives every partner application. Stored as configuration, not
+     * as a literal in the UI, so the number can move without a frontend release. International
+     * format without punctuation (wa.me requirement).
+     */
+    APPLICATIONS_WHATSAPP_NUMBER: z
+      .string()
+      .regex(/^[1-9]\d{7,14}$/, 'Use the international format without punctuation, e.g. 918604683669')
+      .default('918604683669'),
+    APPLICATIONS_WHATSAPP_DISPLAY: z.string().default('+91 86046 83669'),
+
     // ---- Business defaults
     BUSINESS_TIMEZONE: z.string().default('Asia/Kolkata'),
     DEFAULT_CURRENCY: z.string().default('INR'),
     RESERVATION_TTL_SECONDS: integerish(900),
+    // A payment that has been PENDING/AUTHORIZED for longer than this is re-checked against the
+    // provider by the reconciliation job: a webhook can be lost, and only the provider's own answer is
+    // authoritative for money.
+    PAYMENTS_RECONCILE_AFTER_SECONDS: integerish(300),
     MARKETPLACE_COMMISSION_PERCENT: z
       .union([z.number(), z.string()])
       .default(8)

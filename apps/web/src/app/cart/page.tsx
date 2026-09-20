@@ -290,10 +290,29 @@ export default function CartPage() {
               fulfilment, and an order may combine several fulfilments with independent pickup, hub receipt
               and delivery tracking.
             </p>
-            <div className="alert" role="status">
-              Checkout is not enabled yet: the order, payment and fulfilment modules are built in later
-              phases. This cart is saved server-side and survives sign-out.
-            </div>
+            <Link
+              className="btn primary"
+              href="/checkout"
+              aria-disabled={cart?.hasIssues ? 'true' : undefined}
+              style={{ justifyContent: 'center', opacity: cart?.hasIssues ? 0.6 : 1 }}
+              onClick={(event) => {
+                // The checkout screen re-validates everything; blocking here would only hide the reason
+                // why a line cannot be ordered. The warning stays visible instead.
+                if (cart?.hasIssues) event.preventDefault();
+              }}
+            >
+              Proceed to checkout
+            </Link>
+            <p className="small faint" style={{ margin: 0 }}>
+              Stock is reserved only when the order is placed, and the reservation is released automatically if
+              the order is cancelled or the payment never completes.
+            </p>
+            {cart?.hasIssues && (
+              <div className="alert warn" role="status">
+                Resolve the flagged lines above before checking out — the pricing screen will list exactly what is
+                blocking the order.
+              </div>
+            )}
           </div>
         </div>
       )}

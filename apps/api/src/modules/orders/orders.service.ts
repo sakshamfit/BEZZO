@@ -1,32 +1,41 @@
 /**
- * Checkout & Orders — the point where a basket becomes a commercial commitment.
+ * Checkout & orders — turning a basket into a commitment (cart/checkout/order spec §7-§12).
  *
- * Source of truth: `Bezzo_cart_checkout_order_placement_spec_v1.0.md` (§16–§45),
- * `Bezo_api_specification_v1.0.md` §22–§23 and `Bezzo_business_rules_state_machine_spec_v1.0.md`.
+ * This module owns every hard guarantee in the marketplace flow:
  *
- * Invariants this service exists to protect:
- *  1. **Server-authoritative pricing.** Totals are recomputed from `supplier_product_listings` inside
- *     the placement transaction; nothing the client sent about price, tax or availability is trusted.
- *  2. **Never oversell the last unit.** Stock is reserved with a guarded UPDATE
- *     (`available_quantity - reserved_quantity >= :qty`); a losing request is rejected instead of
- *     double-selling, even under concurrent checkouts of the same last unit.
- *  3. **Order ≠ Fulfillment.** One order is split into one fulfillment per supplier, each with its own
- *     lifecycle. They are never collapsed into a single order status.
- *  4. **Idempotent commands.** `POST /orders` carries `@Idempotent`, and the checkout session stores the
- *     key, so a retried submission returns the original order instead of a second one.
- *  5. **No external call inside a transaction.** The payment intent is created after the order commits,
- *     so a slow gateway can never hold database locks; a gateway failure leaves a real, payable order.
- *  6. **Cancellation releases stock.** Reservations are released with a guarded UPDATE, so cancelling
- *     twice cannot credit inventory twice.
+ *  1. **Pricing is server-authoritative.** The client never sends prices. Every line is re-read from
+ *     `supplier_product_listings` inside the order transaction and snapshotted onto the order, so a
+ *     later price change cannot rewrite history.
+ *  2. **Stock can never be oversold.** Each line takes a row-level conditional reservation:
+ *     `UPDATE inventories SET reserved_quantity = reserved_quantity + :q
+ *       WHERE id = :id AND available_quantity - reserved_quantity >= :q`.
+ *     Postgres serialises the two competing updates; the loser matches zero rows and gets
+ *     `INSUFFICIENT_STOCK`. Two buyers checking out for the last unit therefore cannot both win.
+ *  3. **One order, many fulfilments.** A basket spanning several suppliers produces one order and one
+ *     fulfilment per supplier (each with its own state machine), never a collapsed pseudo-status.
+ *  4. **The gateway is called after the commit.** Provider failures are recorded *on the payment* and
+ *     returned with the order — an order that exists must never be reported as though it failed, and a
+ *     buyer whose gateway hiccuped must still be able to pay.
+ *  5. **Payment is abstracted.** The service talks to the `PAYMENT_PROVIDER` token only.
+ *  6. **Cancellation is guarded, never blind.** Only states that still allow it, only when nothing has
+ *     been paid (a paid order needs a refund, which is a different command), and the reservation
+ *     release is idempotent so a retried cancel cannot double-restock.
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import {
-  ErrorCode,
+  CartStatus,
+  DeliveryMode,
   DomainEventName,
+  ErrorCode,
+  FulfillmentItemStatus,
+  FulfillmentStatus,
+  OrderItemStatus,
   OrderStatus,
+  PaymentMethodType,
   PaymentStatus,
   PrescriptionClassification,
+  ReservationStatus,
 } from '@bezzo/contracts';
 import { Database, type Database as DatabaseType } from '@bezzo/database';
 import type { AppConfig } from '@bezzo/config';
@@ -36,434 +45,495 @@ import { AuditService } from '../../infrastructure/audit/audit.service';
 import { EventBusService } from '../../infrastructure/events/event-bus.service';
 import { PAYMENT_PROVIDER } from '../../infrastructure/payments/payments-infra.module';
 import type { PaymentProvider } from '../../infrastructure/payments/payment-provider';
+import { PaymentProviderError } from '../../infrastructure/payments/payment-provider';
 import { DomainError } from '../../common/errors/domain-error';
 import type { AuthenticatedActor } from '../../common/context/request-context';
 import { paginate, sqlLimitOffset, type PagePaginationInput } from '../../common/pagination/pagination';
 
-/* ------------------------------------------------------------------ validation */
+/* ------------------------------------------------------------------ schemas */
 
-export const DELIVERY_MODES = ['INSTANT', 'SCHEDULED'] as const;
-export const PAYMENT_METHODS = ['UPI', 'CARD', 'NET_BANKING', 'WALLET', 'COD'] as const;
-
-/**
- * Clients (and the API specification's own examples) send explicit `null` for "not set", so optional
- * fields accept null and normalise it to undefined. Rejecting null would be a contract nobody expects.
- */
+const deliveryModeEnum = z.enum([DeliveryMode.INSTANT, DeliveryMode.SCHEDULED]);
+const paymentMethodEnum = z.enum([
+  PaymentMethodType.UPI,
+  PaymentMethodType.CARD,
+  PaymentMethodType.NET_BANKING,
+  PaymentMethodType.WALLET,
+  PaymentMethodType.COD,
+]);
 const isoDate = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use the YYYY-MM-DD format')
-  .nullish()
-  .transform((value) => value ?? undefined);
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use the ISO date format YYYY-MM-DD');
 
-export const checkoutQuoteSchema = z.object({
+/** Everything a quote and an order need. The order endpoint adds the payment method and note. */
+const checkoutBase = {
   deliveryAddressId: z.string().uuid(),
-  deliveryMode: z.enum(DELIVERY_MODES),
+  deliveryMode: deliveryModeEnum.default(DeliveryMode.SCHEDULED),
   deliverySlotId: z.string().uuid().nullish().transform((value) => value ?? undefined),
-  deliveryDate: isoDate,
-});
+  deliveryDate: isoDate.nullish().transform((value) => value ?? undefined),
+};
 
-export const placeOrderSchema = checkoutQuoteSchema.extend({
-  paymentMethod: z.enum(PAYMENT_METHODS),
-  buyerNote: z
-    .string()
-    .trim()
-    .max(500)
-    .nullish()
-    .transform((value) => value ?? undefined),
-});
+export const checkoutQuoteSchema = z.object(checkoutBase);
 
-export const cancelOrderSchema = z.object({
-  reason: z
-    .string()
-    .trim()
-    .min(3)
-    .max(300)
-    .nullish()
-    .transform((value) => value ?? undefined),
+export const placeOrderSchema = z.object({
+  ...checkoutBase,
+  paymentMethod: paymentMethodEnum.default(PaymentMethodType.COD),
+  buyerNote: z.string().trim().max(500).nullish().transform((value) => value ?? undefined),
 });
 
 export const orderListQuerySchema = z.object({
-  status: z.enum(Object.values(OrderStatus) as [string, ...string[]]).optional(),
-  from: isoDate,
-  to: isoDate,
+  status: z
+    .enum([
+      OrderStatus.PENDING_PAYMENT,
+      OrderStatus.CONFIRMED,
+      OrderStatus.PROCESSING,
+      OrderStatus.PARTIALLY_FULFILLED,
+      OrderStatus.FULFILLED,
+      OrderStatus.CANCELLED,
+      OrderStatus.CLOSED,
+    ])
+    .optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export const cancelOrderSchema = z.object({
+  reason: z.string().trim().max(300).nullish().transform((value) => value ?? undefined),
 });
 
 export type CheckoutQuoteInput = z.infer<typeof checkoutQuoteSchema>;
 export type PlaceOrderInput = z.infer<typeof placeOrderSchema>;
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 
-/* ------------------------------------------------------------------ rows */
+/* -------------------------------------------------------------------- types */
 
-interface CartLineRow {
-  cart_item_id: string;
-  supplier_listing_id: string;
-  supplier_id: string;
-  supplier_name: string;
-  supplier_city: string | null;
-  supplier_status: string;
-  supplier_verification_status: string;
-  product_id: string;
-  product_name: string;
-  composition_summary: string | null;
-  manufacturer_name: string | null;
-  pack_size: string | null;
-  prescription_classification: string;
-  product_status: string;
-  quantity: number;
-  selling_price: string;
-  mrp_reference: string | null;
-  tax_rate: string | null;
-  minimum_order_quantity: number;
-  listing_status: string;
-  inventory_id: string | null;
-  available_quantity: number | null;
-  reserved_quantity: number | null;
-  batch_number: string | null;
-  expiry_date: Date | null;
-}
-
-interface OrderRow {
-  id: string;
-  order_number: string;
-  status: string;
-  payment_status: string;
-  currency: string;
-  subtotal: string;
-  discount_total: string;
-  tax_total: string;
-  delivery_fee: string;
-  grand_total: string;
-  delivery_mode: string;
-  delivery_date: Date | null;
-  delivery_slot_id: string | null;
-  delivery_slot_name: string | null;
-  shipping_address_snapshot: Record<string, unknown>;
-  buyer_note: string | null;
-  cancellation_reason: string | null;
-  placed_at: Date | null;
-  confirmed_at: Date | null;
-  cancelled_at: Date | null;
-  completed_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface CheckoutIssue {
-  code: string;
-  message: string;
-  supplierProductId?: string;
-}
-
-export interface PricedLine {
+interface PricedLine {
   cartItemId: string;
-  supplierListingId: string;
+  listingId: string;
   supplierId: string;
   supplierName: string;
   productId: string;
   productName: string;
   manufacturerName: string | null;
+  composition: string | null;
   packSize: string | null;
-  quantity: number;
   unitPrice: number;
   mrpReference: number | null;
   taxRate: number;
-  discountAmount: number;
-  taxAmount: number;
+  quantity: number;
+  lineSubtotal: number;
+  lineTax: number;
   lineTotal: number;
+  inventoryId: string;
+  availableQuantity: number;
+  reservedQuantity: number;
+  minimumOrderQuantity: number;
+  issue: string | null;
 }
+
+interface AddressRow {
+  id: string;
+  label: string;
+  contact_name: string;
+  contact_phone: string;
+  address_line_1: string;
+  address_line_2: string | null;
+  landmark: string | null;
+  city: string;
+  state: string;
+  postal_code: string;
+  country: string;
+  latitude: string | null;
+  longitude: string | null;
+}
+
+/**
+ * Anything that can run a query — the pool itself or the transaction client. The checkout path must
+ * work inside a transaction (`PoolClient` exposes `query` only), which is why the shared helpers take
+ * this narrow shape instead of the full `Database` facade.
+ */
+type Queryable = { query: DatabaseType['query'] };
+
+/**
+ * Inventory statuses that may still be sold. `inventories.status` describes the shelf, not the
+ * quantity: a LOW_STOCK or OUT_OF_STOCK row is sellable while `available - reserved` allows it, whereas
+ * a quarantined, blocked, damaged, expired or recalled row must never be offered even with stock on it.
+ */
+const SELLABLE_INVENTORY_STATUSES = ['AVAILABLE', 'LOW_STOCK', 'OUT_OF_STOCK'];
+
+/** `payments.gateway` is a constrained vocabulary; cash on delivery is not a gateway, it is its own value. */
+const PAYMENT_GATEWAY_COD = 'cod';
+
+/** Cancel is allowed only while the goods have not moved and no money has been captured. */
+const CANCELLABLE_ORDER_STATUSES: string[] = [OrderStatus.PENDING_PAYMENT, OrderStatus.CONFIRMED];
 
 @Injectable()
 export class OrdersService {
   constructor(
     @Inject(DATABASE) private readonly database: DatabaseType,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(PAYMENT_PROVIDER) private readonly payments: PaymentProvider,
     private readonly audit: AuditService,
     private readonly events: EventBusService,
-    @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
   ) {}
 
-  /* ---------------------------------------------------------------- quoting */
+  /* ------------------------------------------------------------------ quote */
 
   /**
-   * POST /checkout/quote — server-calculated totals for the current basket, with every reason the
-   * order could not be placed. Read-only: this never reserves stock, so a preview can never
-   * accidentally hold inventory.
+   * POST /checkout/quote — price the basket without touching it.
+   *
+   * Read-only on purpose: a preview must never hold stock, create a payment or write an order. It is
+   * the same validation and pricing code the order endpoint runs, so what the buyer sees is what the
+   * order will charge.
    */
   async quote(actor: AuthenticatedActor, input: CheckoutQuoteInput) {
     const buyerId = this.requireBuyer(actor);
-    const context = await this.buildContext(this.database, buyerId, input);
+    const context = await this.prepare(this.database, buyerId, input, null);
+    const fees = this.deliveryFee(input.deliveryMode);
+
+    const issues = [
+      ...context.issues,
+      ...context.lines.filter((line) => line.issue).map((line) => this.lineIssue(line)),
+    ].filter(Boolean);
+
+    const placeable = issues.length === 0 && context.lines.length > 0;
 
     return {
+      placeable,
       currency: context.currency,
       deliveryMode: input.deliveryMode,
-      deliveryDate: context.deliveryDate,
-      deliverySlot: context.deliverySlot
-        ? { id: context.deliverySlot.id, name: context.deliverySlot.name, startTime: context.deliverySlot.start_time, endTime: context.deliverySlot.end_time }
-        : null,
-      address: context.address,
-      totals: context.totals,
-      lines: context.lines.map((line) => ({
-        supplierProductId: line.supplierListingId,
-        supplierId: line.supplierId,
-        supplierName: line.supplierName,
-        productId: line.productId,
-        productName: line.productName,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        taxRate: line.taxRate,
-        taxAmount: line.taxAmount,
-        discountAmount: line.discountAmount,
-        lineTotal: line.lineTotal,
-      })),
-      issues: context.issues,
-      placeable: context.issues.length === 0,
-      paymentMethods: PAYMENT_METHODS,
+      deliveryFee: fees.total,
+      deliveryFeeBreakdown: fees.breakdown,
+      subtotal: this.round(context.subtotal),
+      taxTotal: this.round(context.taxTotal),
+      discountTotal: 0,
+      grandTotal: this.round(context.subtotal + context.taxTotal + fees.total),
+      itemCount: context.lines.reduce((total, line) => total + line.quantity, 0),
+      cartId: context.cartId,
+      supplierCount: new Set(context.lines.map((line) => line.supplierId)).size,
+      deliveryAddress: context.address ? this.presentAddress(context.address) : null,
+      issues,
+      lines: context.lines.map((line) => this.presentLine(line)),
+      quotedAt: new Date().toISOString(),
     };
   }
 
-  /* ---------------------------------------------------------------- placing */
+  /* ------------------------------------------------------------- place order */
 
-  /** POST /orders — atomically reserve stock, create the order, its fulfillments and the payment. */
-  async place(actor: AuthenticatedActor, input: PlaceOrderInput) {
+  /** POST /orders — validate, price, reserve, create the order, then ask the gateway for an intent. */
+  async placeOrder(actor: AuthenticatedActor, input: PlaceOrderInput, requestId: string | null) {
     const buyerId = this.requireBuyer(actor);
+    const fees = this.deliveryFee(input.deliveryMode);
 
-    const prepared = await this.buildContext(this.database, buyerId, input);
-    if (prepared.cartId === null) {
-      throw new DomainError(ErrorCode.CART_EMPTY, 'Your basket is empty');
-    }
-    if (prepared.issues.length > 0) {
-      const blocking = prepared.issues[0];
-      throw new DomainError(
-        blocking?.code === 'INSUFFICIENT_STOCK' ? ErrorCode.INSUFFICIENT_STOCK : ErrorCode.CART_ITEM_UNAVAILABLE,
-        blocking?.message ?? 'The basket cannot be ordered in its current state',
-        { httpStatus: 409, details: { issues: prepared.issues } },
-      );
-    }
+    const result = await this.database.transaction(async (client) => {
+      const context = await this.prepare(client, buyerId, input, input.paymentMethod);
 
-    const confirmedImmediately = input.paymentMethod === 'COD';
-
-    const placed = await this.database.transaction(async (client) => {
-      /* 1. Re-read the basket inside the transaction and lock the lines: a concurrent mutation must
-            not change the order between validation and reservation. */
-      const lines = await this.loadCartLines(client, prepared.cartId as string, true);
-      if (lines.length === 0) {
+      if (context.lines.length === 0) {
         throw new DomainError(ErrorCode.CART_EMPTY, 'Your basket is empty');
       }
 
-      /* 2. Reserve every line, ordered by inventory id so two concurrent checkouts take locks in the
-            same sequence (no deadlock, no lost update). This guarded UPDATE is the only gate that
-            decides whether the last unit is sold — the earlier availability read is advisory. */
-      const sorted = [...lines].sort((a, b) => (a.inventory_id ?? '').localeCompare(b.inventory_id ?? ''));
-      for (const line of sorted) {
-        if (!line.inventory_id) {
-          throw new DomainError(ErrorCode.OUT_OF_STOCK, `${line.product_name} is not stocked by ${line.supplier_name}`);
-        }
-        const reserved = await client.query<{ available_quantity: number; reserved_quantity: number }>(
+      const blocking = [
+        ...context.issues,
+        ...context.lines.filter((line) => line.issue).map((line) => this.lineIssue(line)),
+      ].filter(Boolean);
+      if (blocking.length > 0) {
+        throw new DomainError(ErrorCode.CHECKOUT_VALIDATION_FAILED, 'This basket cannot be ordered yet', {
+          httpStatus: 422,
+          details: { issues: blocking },
+        });
+      }
+
+      /* 1. Reserve every line. Deterministic order (by inventory id) keeps concurrent checkouts from
+         deadlocking against each other; the guarded predicate is what makes the last unit safe. */
+      const ordered = [...context.lines].sort((left, right) => left.inventoryId.localeCompare(right.inventoryId));
+      for (const line of ordered) {
+        const reserved = await client.query<{ reserved_quantity: number; available_quantity: number }>(
           `UPDATE inventories
-              SET reserved_quantity = reserved_quantity + $2,
-                  status = CASE WHEN available_quantity - (reserved_quantity + $2) <= 0 THEN 'OUT_OF_STOCK' ELSE status END,
-                  updated_at = now()
+              SET reserved_quantity = reserved_quantity + $2, updated_at = now()
             WHERE id = $1
+              AND status = ANY($3::TEXT[])
               AND available_quantity - reserved_quantity >= $2
-              AND status <> 'BLOCKED'
         RETURNING available_quantity, reserved_quantity`,
-          [line.inventory_id, line.quantity],
+          [line.inventoryId, line.quantity, SELLABLE_INVENTORY_STATUSES],
         );
-        if (reserved.rowCount === 0) {
+        if ((reserved.rowCount ?? 0) === 0) {
+          const current = await client.query<{ available_quantity: number; reserved_quantity: number }>(
+            `SELECT available_quantity, reserved_quantity FROM inventories WHERE id = $1`,
+            [line.inventoryId],
+          );
+          const sellable = Math.max(
+            (current.rows[0]?.available_quantity ?? 0) - (current.rows[0]?.reserved_quantity ?? 0),
+            0,
+          );
           throw new DomainError(
             ErrorCode.INSUFFICIENT_STOCK,
-            `Only limited stock of ${line.product_name} is available right now`,
-            { httpStatus: 409, details: { supplierProductId: line.supplier_listing_id } },
+            sellable === 0
+              ? `${line.productName} sold out while you were checking out`
+              : `Only ${sellable} unit(s) of ${line.productName} are still available`,
+            { details: { supplierProductId: line.listingId, availableQuantity: sellable } },
           );
         }
       }
 
-      const priced = prepared.lines;
-      const totals = prepared.totals;
-      const orderStatus = confirmedImmediately ? OrderStatus.CONFIRMED : OrderStatus.PENDING_PAYMENT;
+      const subtotal = this.round(context.lines.reduce((total, line) => total + line.lineSubtotal, 0));
+      const taxTotal = this.round(context.lines.reduce((total, line) => total + line.lineTax, 0));
+      const grandTotal = this.round(subtotal + taxTotal + fees.total);
 
-      /* 3. Order header with a customer-facing number generated by the database sequence. */
-      const orderInsert = await client.query<OrderRow>(
+      const cashOnDelivery = context.paymentMethod === PaymentMethodType.COD;
+      const orderStatus = cashOnDelivery ? OrderStatus.CONFIRMED : OrderStatus.PENDING_PAYMENT;
+
+      /* 2. The order itself. `prepared:order_number` is the database's job (`BZ-2026-000001`). */
+      const orderRow = await client.query<{ id: string; order_number: string; created_at: Date }>(
         `INSERT INTO orders
            (order_number, buyer_id, status, payment_status, currency, subtotal, discount_total, tax_total,
             delivery_fee, grand_total, delivery_mode, delivery_date, delivery_slot_id,
-            shipping_address_snapshot, billing_address_snapshot, buyer_note, placed_at, confirmed_at)
-         VALUES (bezzo_next_order_number(), $1, $2, 'PENDING', $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                 $12::JSONB, $12::JSONB, $13, now(), CASE WHEN $2 = 'CONFIRMED' THEN now() ELSE NULL END)
-         RETURNING *`,
+            shipping_address_snapshot, buyer_note, placed_at, confirmed_at)
+         VALUES (bezzo_next_order_number(), $1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, $11, $12::JSONB, $13,
+                 now(), CASE WHEN $14::BOOLEAN THEN now() ELSE NULL END)
+         RETURNING id, order_number, created_at`,
         [
           buyerId,
           orderStatus,
-          prepared.currency,
-          totals.subtotal,
-          totals.discountTotal,
-          totals.taxTotal,
-          totals.deliveryFee,
-          totals.grandTotal,
+          PaymentStatus.PENDING,
+          context.currency,
+          subtotal,
+          taxTotal,
+          fees.total,
+          grandTotal,
           input.deliveryMode,
-          prepared.deliveryDate,
-          prepared.deliverySlot?.id ?? null,
-          JSON.stringify(prepared.address),
+          context.deliveryDate,
+          context.deliverySlotId,
+          JSON.stringify(this.addressSnapshot(context.address)),
           input.buyerNote ?? null,
+          cashOnDelivery,
         ],
       );
-      const order = orderInsert.rows[0];
+      const order = orderRow.rows[0];
       if (!order) throw new Error('Order insert returned no row');
 
-      /* 4. Order lines carry immutable snapshots — a later price or catalogue edit must never rewrite
-            what the buyer agreed to. */
-      const orderItems: { id: string; line: PricedLine; fulfillmentId: string }[] = [];
-      const fulfillmentBySupplier = new Map<string, { id: string; reference: string }>();
-
-      for (const line of priced) {
-        const item = await client.query<{ id: string }>(
+      /* 3. Lines, fulfilments and reservations. */
+      const itemIds = new Map<string, string>();
+      for (const line of context.lines) {
+        const itemRow = await client.query<{ id: string }>(
           `INSERT INTO order_items
              (order_id, product_id, supplier_listing_id, supplier_id, product_name_snapshot,
               manufacturer_snapshot, composition_snapshot, pack_size_snapshot, unit_price, mrp_snapshot,
               tax_rate_snapshot, quantity, discount_amount, tax_amount, line_total, status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'PENDING')
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,0,$13,$14,$15)
            RETURNING id`,
           [
             order.id,
             line.productId,
-            line.supplierListingId,
+            line.listingId,
             line.supplierId,
             line.productName,
             line.manufacturerName,
-            null,
+            line.composition,
             line.packSize,
             line.unitPrice,
             line.mrpReference,
             line.taxRate,
             line.quantity,
-            line.discountAmount,
-            line.taxAmount,
-            line.lineTotal,
+            this.round(line.lineTax),
+            this.round(line.lineTotal),
+            cashOnDelivery ? OrderItemStatus.CONFIRMED : OrderItemStatus.PENDING,
           ],
         );
-        const orderItemId = item.rows[0]?.id;
-        if (!orderItemId) throw new Error('Order item insert returned no row');
+        const itemId = itemRow.rows[0]?.id;
+        if (!itemId) throw new Error('Order item insert returned no row');
+        itemIds.set(line.cartItemId, itemId);
 
-        /* 5. One fulfillment per supplier — the boundary the picker and delivery flows attach to. */
-        let fulfillment = fulfillmentBySupplier.get(line.supplierId);
-        if (!fulfillment) {
-          const sequence = fulfillmentBySupplier.size + 1;
-          const reference = `${order.order_number}-F${sequence}`;
-          const inserted = await client.query<{ id: string }>(
-            `INSERT INTO fulfillments
-               (order_id, supplier_id, fulfillment_reference, status, subtotal, discount_total, tax_total,
-                delivery_allocation, total, package_count)
-             VALUES ($1,$2,$3,'CREATED',0,0,0,0,0,0)
-             RETURNING id`,
-            [order.id, line.supplierId, reference],
-          );
-          const fulfillmentId = inserted.rows[0]?.id;
-          if (!fulfillmentId) throw new Error('Fulfillment insert returned no row');
-          fulfillment = { id: fulfillmentId, reference };
-          fulfillmentBySupplier.set(line.supplierId, fulfillment);
-        }
-
+        // The TTL is a *payment* window, so it only applies to an order that is still waiting for money.
+        // Cash on delivery commits at placement — there is no window to wait for — and holding it as
+        // ACTIVE would let the expiry job return the stock to the shelf while the order is live and
+        // expected to be fulfilled. A paid order is flipped to CONFIRMED by the payment capture.
         await client.query(
-          `INSERT INTO fulfillment_items (fulfillment_id, order_item_id, quantity, status)
-           VALUES ($1,$2,$3,'PENDING')`,
-          [fulfillment.id, orderItemId, line.quantity],
+          `INSERT INTO inventory_reservations (inventory_id, order_id, order_item_id, quantity, status, expires_at, confirmed_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            line.inventoryId,
+            order.id,
+            itemId,
+            line.quantity,
+            cashOnDelivery ? ReservationStatus.CONFIRMED : ReservationStatus.ACTIVE,
+            // `expires_at` is NULL for a committed reservation: no timer can release it (migration 0017).
+            cashOnDelivery ? null : new Date(Date.now() + this.config.RESERVATION_TTL_SECONDS * 1_000),
+            cashOnDelivery ? new Date() : null,
+          ],
         );
-
-        const inventoryId = lines.find((row) => row.supplier_listing_id === line.supplierListingId)?.inventory_id;
-        if (inventoryId) {
-          await client.query(
-            `INSERT INTO inventory_reservations
-               (inventory_id, order_id, order_item_id, quantity, status, expires_at)
-             VALUES ($1,$2,$3,$4,'ACTIVE', now() + make_interval(secs => $5))`,
-            [inventoryId, order.id, orderItemId, line.quantity, this.config.RESERVATION_TTL_SECONDS],
-          );
-        }
-
-        orderItems.push({ id: orderItemId, line, fulfillmentId: fulfillment.id });
       }
 
-      await this.recomputeFulfillmentTotals(client, [...fulfillmentBySupplier.values()].map((f) => f.id));
+      const fulfillmentSummaries: Array<{
+        fulfillmentId: string;
+        fulfillmentReference: string;
+        supplierId: string;
+        supplierName: string;
+        subtotal: number;
+        taxTotal: number;
+        deliveryAllocation: number;
+        total: number;
+        status: string;
+        itemCount: number;
+      }> = [];
 
-      /* 6. Payment row. The gateway reference is filled in after commit — see `initiatePayment`. */
-      const paymentInsert = await client.query<{ id: string }>(
+      const supplierIds = [...new Set(context.lines.map((line) => line.supplierId))];
+      /* The buyer pays one delivery fee for the order, so the fee is split across suppliers — never
+         charged once per supplier. The remainder lands on the first satisfaction so that the
+         allocations always add up to exactly what the buyer is charged. */
+      const allocations = this.splitFee(fees.total, supplierIds.length);
+      let index = 0;
+      for (const supplierId of supplierIds) {
+        const deliveryAllocation = allocations[index] ?? 0;
+        index += 1;
+        const supplierLines = context.lines.filter((line) => line.supplierId === supplierId);
+        const supplierSubtotal = this.round(supplierLines.reduce((total, line) => total + line.lineSubtotal, 0));
+        const supplierTax = this.round(supplierLines.reduce((total, line) => total + line.lineTax, 0));
+        const supplierUnits = supplierLines.reduce((total, line) => total + line.quantity, 0);
+
+        const fulfillmentRow = await client.query<{ id: string; fulfillment_reference: string; status: string }>(
+          `INSERT INTO fulfillments
+             (order_id, supplier_id, fulfillment_reference, status, subtotal, discount_total, tax_total,
+              delivery_allocation, total, package_count)
+           VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8,1)
+           RETURNING id, fulfillment_reference, status`,
+          [
+            order.id,
+            supplierId,
+            `${order.order_number}-F${index}`,
+            FulfillmentStatus.CREATED,
+            supplierSubtotal,
+            supplierTax,
+            deliveryAllocation,
+            this.round(supplierSubtotal + supplierTax + deliveryAllocation),
+          ],
+        );
+        const fulfillment = fulfillmentRow.rows[0];
+        if (!fulfillment) throw new Error('Fulfillment insert returned no row');
+
+        for (const line of supplierLines) {
+          const orderItemId = itemIds.get(line.cartItemId);
+          if (!orderItemId) continue;
+          await client.query(
+            `INSERT INTO fulfillment_items (fulfillment_id, order_item_id, quantity, status)
+             VALUES ($1,$2,$3,$4)`,
+            [fulfillment.id, orderItemId, line.quantity, FulfillmentItemStatus.PENDING],
+          );
+        }
+
+        fulfillmentSummaries.push({
+          fulfillmentId: fulfillment.id,
+          fulfillmentReference: fulfillment.fulfillment_reference,
+          supplierId,
+          supplierName: supplierLines[0]?.supplierName ?? 'Supplier',
+          subtotal: supplierSubtotal,
+          taxTotal: supplierTax,
+          deliveryAllocation,
+          total: this.round(supplierSubtotal + supplierTax + deliveryAllocation),
+          status: fulfillment.status,
+          itemCount: supplierUnits,
+        });
+      }
+
+      /* 4. Payment row. `gateway` is the configured provider or `cod`; the intent is created after
+         the commit so a gateway timeout can never roll back a placed order. */
+      const gateway = cashOnDelivery ? PAYMENT_GATEWAY_COD : this.payments.name;
+      const paymentRow = await client.query<{ id: string }>(
         `INSERT INTO payments
            (order_id, buyer_id, gateway, amount, currency, status, payment_method_type, idempotency_key)
-         VALUES ($1,$2,$3,$4,$5,'PENDING',$6,$7)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          RETURNING id`,
         [
           order.id,
           buyerId,
-          input.paymentMethod === 'COD' ? 'cod' : this.paymentProvider.name,
-          totals.grandTotal,
-          prepared.currency,
-          input.paymentMethod,
-          null,
+          gateway,
+          grandTotal,
+          context.currency,
+          PaymentStatus.PENDING,
+          context.paymentMethod,
+          `${order.id}:intent:1`,
         ],
       );
-      const paymentId = paymentInsert.rows[0]?.id ?? null;
+      const paymentId = paymentRow.rows[0]?.id;
+      if (!paymentId) throw new Error('Payment insert returned no row');
 
-      /* 7. Checkout session: the auditable record of what was validated and priced at placement. */
-      await client.query(
+      /* 5. The checkout attempt is auditable in its own right (pricing snapshot, address, method). */
+      const sessionRow = await client.query<{ id: string }>(
         `INSERT INTO checkout_sessions
            (buyer_id, cart_id, status, idempotency_key, delivery_mode, delivery_date, delivery_slot_id,
             address_id, shipping_address_snapshot, payment_method, currency, calculated_subtotal,
             discount_total, tax_total, delivery_fee, grand_total, pricing_snapshot, order_id, expires_at)
-         VALUES ($1,$2,'ORDER_CREATED',$3,$4,$5,$6,$7,$8::JSONB,$9,$10,$11,$12,$13,$14,$15,$16::JSONB,$17,
-                 now() + make_interval(secs => $18))`,
+         VALUES ($1,$2,'ORDER_CREATED',$3,$4,$5,$6,$7,$8::JSONB,$9,$10,$11,0,$12,$13,$14,$15::JSONB,$16, now() + make_interval(secs => $17))
+         RETURNING id`,
         [
           buyerId,
-          prepared.cartId,
-          actor.sessionId ?? null,
+          context.cartId,
+          requestId ?? `${order.id}:checkout`,
           input.deliveryMode,
-          prepared.deliveryDate,
-          prepared.deliverySlot?.id ?? null,
-          input.deliveryAddressId,
-          JSON.stringify(prepared.address),
-          input.paymentMethod,
-          prepared.currency,
-          totals.subtotal,
-          totals.discountTotal,
-          totals.taxTotal,
-          totals.deliveryFee,
-          totals.grandTotal,
-          JSON.stringify(priced),
+          context.deliveryDate,
+          context.deliverySlotId,
+          context.address?.id ?? null,
+          JSON.stringify(this.addressSnapshot(context.address)),
+          context.paymentMethod,
+          context.currency,
+          subtotal,
+          taxTotal,
+          fees.total,
+          grandTotal,
+          JSON.stringify({
+            lines: context.lines.map((line) => this.presentLine(line)),
+            deliveryFeeBreakdown: fees.breakdown,
+          }),
           order.id,
           this.config.RESERVATION_TTL_SECONDS,
         ],
       );
 
-      /* 8. Status history + cart closure. */
-      await client.query(
-        `INSERT INTO order_status_history (order_id, from_status, to_status, reason, actor_type, actor_id)
-         VALUES ($1, NULL, $2, $3, 'BUYER', $4)`,
-        [order.id, orderStatus, confirmedImmediately ? 'COD order confirmed at placement' : 'Order placed, awaiting payment', actor.userId],
-      );
+      await client.query(`UPDATE orders SET checkout_session_id = $2 WHERE id = $1`, [
+        order.id,
+        sessionRow.rows[0]?.id ?? null,
+      ]);
 
-      await client.query(`UPDATE carts SET status = 'CONVERTED', updated_at = now() WHERE id = $1`, [prepared.cartId]);
+      /* 6. The basket becomes history: a new one is created lazily on the next visit. */
+      await client.query(`UPDATE carts SET status = $2, updated_at = now() WHERE id = $1`, [
+        context.cartId,
+        CartStatus.CONVERTED,
+      ]);
+
+      const writeHistory = (fromStatus: string | null, toStatus: string, reason: string) =>
+        client.query(
+          `INSERT INTO order_status_history (order_id, from_status, to_status, reason, actor_type, actor_id, request_id)
+           VALUES ($1,$2,$3,$4,'BUYER',$5,$6)`,
+          [order.id, fromStatus, toStatus, reason, actor.userId, requestId],
+        );
+      await writeHistory(
+        null,
+        orderStatus,
+        cashOnDelivery
+          ? 'Order placed — cash on delivery, nothing to pay online'
+          : 'Order placed — awaiting payment',
+      );
 
       await this.events.emit(client, {
         eventName: DomainEventName.OrderCreated,
         aggregateType: 'order',
         aggregateId: order.id,
         payload: {
-          orderId: order.id,
           orderNumber: order.order_number,
           buyerId,
-          grandTotal: totals.grandTotal,
-          currency: prepared.currency,
-          deliverMode: input.deliveryMode,
-          fulfillmentIds: [...fulfillmentBySupplier.values()].map((f) => f.id),
-          paymentId,
+          grandTotal,
+          currency: context.currency,
+          supplierCount: supplierIds.length,
+          deliveryMode: input.deliveryMode,
+          paymentMethod: context.paymentMethod,
         },
       });
-      if (confirmedImmediately) {
+      if (cashOnDelivery) {
         await this.events.emit(client, {
           eventName: DomainEventName.OrderConfirmed,
           aggregateType: 'order',
           aggregateId: order.id,
-          payload: { orderId: order.id, orderNumber: order.order_number, reason: 'COD' },
+          payload: { orderNumber: order.order_number, buyerId, reason: 'CASH_ON_DELIVERY', grandTotal },
         });
       }
 
@@ -473,32 +543,123 @@ export class OrdersService {
         resourceId: order.id,
         metadata: {
           orderNumber: order.order_number,
-          grandTotal: totals.grandTotal,
-          itemCount: priced.length,
-          supplierCount: fulfillmentBySupplier.size,
-          paymentMethod: input.paymentMethod,
+          grandTotal,
+          itemCount: context.lines.length,
+          supplierCount: supplierIds.length,
+          deliveryMode: input.deliveryMode,
+          paymentMethod: context.paymentMethod,
         },
       });
 
       return {
         order,
         paymentId,
-        fulfillmentIds: [...fulfillmentBySupplier.values()].map((f) => f.id),
+        grandTotal,
+        currency: context.currency,
+        fulfillmentSummaries,
+        cashOnDelivery,
       };
     });
 
-    /* The gateway is called outside the transaction: a slow provider must never hold row locks. */
-    const payment = placed.paymentId
-      ? await this.initiatePayment(placed.order, placed.paymentId, input.paymentMethod, buyerId)
-      : null;
+    /* -------------------------------- after the commit: the gateway, never before ------------- */
+    // `input.paymentMethod` is non-COD here, which is exactly what the provider contract expects.
+    let paymentStatus: string = PaymentStatus.PENDING;
+    let providerPayload: Record<string, unknown> | null = null;
+    let providerReference: string | null = null;
+    let paymentFailure: { code: string; message: string } | null = null;
 
-    const detail = await this.presentOrder(this.database, buyerId, placed.order.id);
-    return { ...detail, payment };
+    if (!result.cashOnDelivery) {
+      try {
+        const intent = await this.payments.createIntent({
+          orderId: result.order.id,
+          orderNumber: result.order.order_number,
+          amount: result.grandTotal,
+          currency: result.currency,
+          method: input.paymentMethod,
+          buyerId,
+          idempotencyKey: `${result.order.id}:intent:1`,
+        });
+        providerReference = intent.providerReference;
+        providerPayload = intent.providerPayload;
+
+        await this.database.transaction(async (client) => {
+          await client.query(
+            `UPDATE payments
+                SET gateway_payment_reference = $2, gateway_order_reference = $3, updated_at = now()
+              WHERE id = $1`,
+            [result.paymentId, intent.providerReference, intent.providerOrderReference],
+          );
+          await client.query(
+            `INSERT INTO payment_attempts (payment_id, gateway, gateway_attempt_reference, status, amount)
+             VALUES ($1,$2,$3,'INITIATED',$4)`,
+            [result.paymentId, this.payments.name, intent.providerReference, result.grandTotal],
+          );
+          await this.events.emit(client, {
+            eventName: DomainEventName.PaymentInitiated,
+            aggregateType: 'payment',
+            aggregateId: result.paymentId,
+            payload: {
+              orderId: result.order.id,
+              orderNumber: result.order.order_number,
+              gateway: this.payments.name,
+              amount: result.grandTotal,
+              providerReference: intent.providerReference,
+            },
+          });
+        });
+      } catch (error) {
+        const providerError = error instanceof PaymentProviderError ? error : null;
+        paymentStatus = PaymentStatus.FAILED;
+        paymentFailure = {
+          code: ErrorCode.PAYMENT_PROVIDER_ERROR,
+          message: providerError?.message ?? 'The payment gateway could not be reached',
+        };
+        // The order stands; only the payment failed, and the buyer can retry paying for it.
+        await this.database.transaction(async (client) => {
+          await client.query(
+            `UPDATE payments
+                SET status = $2, failed_at = now(), failure_code = $3, failure_message = $4, updated_at = now()
+              WHERE id = $1`,
+            [result.paymentId, PaymentStatus.FAILED, paymentFailure?.code ?? null, paymentFailure?.message ?? null],
+          );
+          await client.query(
+            `INSERT INTO payment_attempts (payment_id, gateway, status, amount, failure_code, failure_message)
+             VALUES ($1,$2,'FAILED',$3,$4,$5)`,
+            [result.paymentId, this.payments.name, result.grandTotal, paymentFailure?.code ?? null, paymentFailure?.message ?? null],
+          );
+          await this.events.emit(client, {
+            eventName: DomainEventName.PaymentFailed,
+            aggregateType: 'payment',
+            aggregateId: result.paymentId,
+            payload: {
+              orderId: result.order.id,
+              orderNumber: result.order.order_number,
+              gateway: this.payments.name,
+              failureCode: paymentFailure?.code ?? null,
+            },
+          });
+        });
+      }
+    }
+
+    const detail = await this.detailInternal(result.order.id, buyerId);
+    return {
+      ...detail,
+      payment: detail.payment
+        ? {
+            ...detail.payment,
+            status: paymentStatus === PaymentStatus.FAILED ? PaymentStatus.FAILED : detail.payment.status,
+            providerPayload,
+            providerReference: providerReference ?? detail.payment.providerReference,
+            failure: paymentFailure,
+          }
+        : null,
+    };
   }
 
-  /* ---------------------------------------------------------------- reading */
+  /* ---------------------------------------------------------------- read APIs */
 
-  /** GET /orders — the buyer's own history. Pagination is always bounded. */
+  /** GET /orders — the buyer's own order history (ownership enforced in SQL). */
   async list(actor: AuthenticatedActor, query: OrderListQuery) {
     const buyerId = this.requireBuyer(actor);
     const { limit, offset } = sqlLimitOffset(query as PagePaginationInput);
@@ -511,593 +672,537 @@ export class OrdersService {
     }
     if (query.from) {
       params.push(query.from);
-      filters.push(`o.created_at >= $${params.length}::date`);
+      filters.push(`o.placed_at >= $${params.length}::DATE`);
     }
     if (query.to) {
       params.push(query.to);
-      filters.push(`o.created_at < ($${params.length}::date + interval '1 day')`);
+      filters.push(`o.placed_at < ($${params.length}::DATE + INTERVAL '1 day')`);
     }
     const where = filters.join(' AND ');
 
-    const total = await this.database.row<{ count: string }>(`SELECT count(*)::TEXT AS count FROM orders o WHERE ${where}`, params);
+    const total = await this.database.row<{ count: string }>(
+      `SELECT count(*)::TEXT AS count FROM orders o WHERE ${where}`,
+      params,
+    );
 
-    const rows = await this.database.rows<OrderRow & { item_count: string; supplier_count: string }>(
-      `SELECT o.*, ds.name AS delivery_slot_name,
-              COALESCE(items.item_count, 0)::TEXT AS item_count,
-              COALESCE(items.supplier_count, 0)::TEXT AS supplier_count
+    const rows = await this.database.rows<{
+      id: string;
+      order_number: string;
+      status: string;
+      payment_status: string;
+      currency: string;
+      subtotal: string;
+      tax_total: string;
+      delivery_fee: string;
+      grand_total: string;
+      delivery_mode: string;
+      delivery_date: Date | null;
+      placed_at: Date;
+      confirmed_at: Date | null;
+      cancelled_at: Date | null;
+      item_count: string;
+      unit_count: string;
+      supplier_count: string;
+      fulfillment_statuses: string[] | null;
+    }>(
+      `SELECT o.id, o.order_number, o.status, o.payment_status, o.currency, o.subtotal, o.tax_total,
+              o.delivery_fee, o.grand_total, o.delivery_mode, o.delivery_date, o.placed_at,
+              o.confirmed_at, o.cancelled_at,
+              (SELECT count(*)::TEXT FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
+              (SELECT COALESCE(sum(oi.quantity), 0)::TEXT FROM order_items oi WHERE oi.order_id = o.id) AS unit_count,
+              (SELECT count(*)::TEXT FROM fulfillments f WHERE f.order_id = o.id) AS supplier_count,
+              (SELECT array_agg(DISTINCT f.status) FROM fulfillments f WHERE f.order_id = o.id) AS fulfillment_statuses
          FROM orders o
-         LEFT JOIN delivery_slots ds ON ds.id = o.delivery_slot_id
-         LEFT JOIN (
-              SELECT order_id, count(*) AS item_count, count(DISTINCT supplier_id) AS supplier_count
-                FROM order_items GROUP BY order_id
-         ) items ON items.order_id = o.id
         WHERE ${where}
-        ORDER BY o.created_at DESC
+        ORDER BY o.placed_at DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset],
     );
 
     return paginate(
-      rows.map((row) => this.serializeOrderSummary(row)),
+      rows.map((row) => this.presentSummary(row)),
       Number(total?.count ?? 0),
       query as PagePaginationInput,
     );
   }
 
-  /** GET /orders/:orderId — buyer-visible detail: lines, per-supplier fulfillments, payment, timeline. */
+  /** GET /orders/:orderId */
   async detail(actor: AuthenticatedActor, orderId: string) {
     const buyerId = this.requireBuyer(actor);
-    return this.presentOrder(this.database, buyerId, orderId);
+    return this.detailInternal(orderId, buyerId);
   }
 
-  /* ---------------------------------------------------------------- cancelling */
+  /* ----------------------------------------------------------------- cancel */
 
-  /** POST /orders/:orderId/cancel — only from states that still permit it, releasing reserved stock. */
-  async cancel(actor: AuthenticatedActor, orderId: string, reason?: string) {
+  /**
+   * POST /orders/:orderId/cancel — give the stock back.
+   *
+   * The release is written as `ACTIVE → RELEASED` with a guarded decrement, so calling cancel twice
+   * can never inflate stock: the second call finds no active reservation and reports the order as
+   * already cancelled instead of restocking twice.
+   */
+  async cancel(actor: AuthenticatedActor, orderId: string, reason: string | undefined, requestId: string | null) {
     const buyerId = this.requireBuyer(actor);
 
-    const cancelled = await this.database.transaction(async (client) => {
-      const order = await client.query<{ id: string; order_number: string; status: string; payment_status: string }>(
-        `SELECT id, order_number, status, payment_status
-           FROM orders WHERE id = $1 AND buyer_id = $2
-          FOR UPDATE`,
+    const outcome = await this.database.transaction(async (client) => {
+      const found = await client.query<{ id: string; order_number: string; status: string; payment_status: string }>(
+        `SELECT id, order_number, status, payment_status FROM orders
+          WHERE id = $1 AND buyer_id = $2 FOR UPDATE`,
         [orderId, buyerId],
       );
-      const row = order.rows[0];
-      if (!row) throw new DomainError(ErrorCode.ORDER_NOT_FOUND, 'Order not found');
+      const order = found.rows[0];
+      if (!order) throw new DomainError(ErrorCode.ORDER_NOT_FOUND, 'Order not found');
 
-      if (row.status === OrderStatus.CANCELLED) {
+      if (order.status === OrderStatus.CANCELLED) {
         throw new DomainError(ErrorCode.ORDER_ALREADY_CANCELLED, 'This order is already cancelled');
       }
-      const cancellable: string[] = [OrderStatus.PENDING_PAYMENT, OrderStatus.CONFIRMED, OrderStatus.PROCESSING];
-      if (!cancellable.includes(row.status)) {
+      if (!CANCELLABLE_ORDER_STATUSES.includes(order.status)) {
         throw new DomainError(
           ErrorCode.ORDER_CANNOT_BE_CANCELLED,
-          `An order in state ${row.status} can no longer be cancelled`,
-          { details: { status: row.status } },
+          'This order has already moved past the point where it can be cancelled — contact support',
+          { details: { status: order.status } },
         );
       }
-      /* Money already captured can only be returned through the refund flow (phase 6). Saying so is
-         better than cancelling an order the buyer has paid for. */
-      if (row.payment_status === PaymentStatus.PAID) {
+      if (order.payment_status === PaymentStatus.PAID || order.payment_status === PaymentStatus.PARTIALLY_REFUNDED) {
+        // A refund is a different command with its own money-movement audit trail (payments phase).
         throw new DomainError(
           ErrorCode.ORDER_CANNOT_BE_CANCELLED,
-          'This order is already paid; a refund request is required instead of a cancellation',
-          { details: { paymentStatus: row.payment_status } },
+          'This order is already paid; raise a refund request instead of cancelling it',
+          { details: { paymentStatus: order.payment_status } },
         );
       }
 
-      /* Release stock with a guard so a repeated cancellation cannot credit inventory twice. */
-      const reservations = await client.query<{ inventory_id: string; quantity: number }>(
+      // ACTIVE *and* CONFIRMED both hold stock in `inventories.reserved_quantity`, so both must be
+      // returned when the order is cancelled — a cash-on-delivery order is confirmed at placement and
+      // would otherwise strand its units forever.
+      const released = await client.query<{ inventory_id: string; quantity: number; status: string }>(
         `UPDATE inventory_reservations
-            SET status = 'RELEASED', released_at = now(), release_reason = $2, updated_at = now()
-          WHERE order_id = $1 AND status = 'ACTIVE'
-        RETURNING inventory_id, quantity`,
-        [orderId, reason ?? 'buyer cancelled'],
+            SET status = $2, released_at = now(), release_reason = $3, updated_at = now()
+          WHERE order_id = $1 AND status IN ($4, $5)
+      RETURNING inventory_id, quantity, status`,
+        [
+          orderId,
+          ReservationStatus.RELEASED,
+          reason ?? 'Buyer cancelled the order',
+          ReservationStatus.ACTIVE,
+          ReservationStatus.CONFIRMED,
+        ],
       );
-      for (const reservation of reservations.rows) {
-        await client.query(
+
+      let releasedUnits = 0;
+      for (const reservation of released.rows) {
+        const updated = await client.query(
           `UPDATE inventories
-              SET reserved_quantity = reserved_quantity - $2, updated_at = now(),
-                  status = CASE WHEN status = 'OUT_OF_STOCK' AND available_quantity - (reserved_quantity - $2) > 0
-                                THEN 'ACTIVE' ELSE status END
+              SET reserved_quantity = reserved_quantity - $2, updated_at = now()
             WHERE id = $1 AND reserved_quantity >= $2`,
           [reservation.inventory_id, reservation.quantity],
         );
+        if ((updated.rowCount ?? 0) === 0) {
+          // Invariant breach: never silently continue with stock that does not add up.
+          throw new Error(
+            `Reservation release would drive inventories.reserved_quantity below zero for ${reservation.inventory_id}`,
+          );
+        }
+        releasedUnits += reservation.quantity;
       }
 
       await client.query(
-        `UPDATE fulfillments
-            SET status = 'CANCELLED', cancelled_at = now(), cancellation_reason = $2, updated_at = now()
-          WHERE order_id = $1 AND status IN ('CREATED','ALLOCATING','ALLOCATED')`,
-        [orderId, reason ?? 'buyer cancelled'],
-      );
-      await client.query(`UPDATE order_items SET status = 'CANCELLED', updated_at = now() WHERE order_id = $1`, [orderId]);
-      await client.query(
-        `UPDATE payments SET status = 'CANCELLED', updated_at = now()
-          WHERE order_id = $1 AND status IN ('PENDING','AUTHORIZED')`,
-        [orderId],
-      );
-
-      const updated = await client.query<OrderRow>(
         `UPDATE orders
-            SET status = 'CANCELLED', cancelled_at = now(), cancellation_reason = $2, updated_at = now()
-          WHERE id = $1
-        RETURNING *`,
-        [orderId, reason ?? null],
+            SET status = $2, payment_status = $3, cancelled_at = now(), cancellation_reason = $4,
+                updated_at = now()
+          WHERE id = $1`,
+        [orderId, OrderStatus.CANCELLED, PaymentStatus.CANCELLED, reason ?? 'Cancelled by the buyer'],
       );
-      const order2 = updated.rows[0];
-      if (!order2) throw new Error('Order update returned no row');
-
       await client.query(
-        `INSERT INTO order_status_history (order_id, from_status, to_status, reason, actor_type, actor_id)
-         VALUES ($1,$2,'CANCELLED',$3,'BUYER',$4)`,
-        [orderId, row.status, reason ?? 'buyer cancelled', actor.userId],
+        `UPDATE order_items SET status = $2, updated_at = now() WHERE order_id = $1 AND status <> $2`,
+        [orderId, OrderItemStatus.CANCELLED],
+      );
+      await client.query(
+        `UPDATE fulfillment_items
+            SET status = $2, updated_at = now()
+          WHERE fulfillment_id IN (SELECT id FROM fulfillments WHERE order_id = $1)
+            AND status <> $2`,
+        [orderId, FulfillmentItemStatus.CANCELLED],
+      );
+      await client.query(
+        `UPDATE fulfillments
+            SET status = $2, cancelled_at = now(), cancellation_reason = $3, updated_at = now()
+          WHERE order_id = $1 AND status IN ($4, $5)`,
+        [orderId, FulfillmentStatus.CANCELLED, reason ?? 'Cancelled by the buyer', FulfillmentStatus.CREATED, FulfillmentStatus.ALLOCATED],
+      );
+      await client.query(
+        `UPDATE payments
+            SET status = $2, updated_at = now()
+          WHERE order_id = $1 AND status = $3`,
+        [orderId, PaymentStatus.CANCELLED, PaymentStatus.PENDING],
+      );
+      await client.query(
+        `INSERT INTO order_status_history (order_id, from_status, to_status, reason, actor_type, actor_id, request_id)
+         VALUES ($1,$2,$3,$4,'BUYER',$5,$6)`,
+        [orderId, order.status, OrderStatus.CANCELLED, reason ?? 'Cancelled by the buyer', actor.userId, requestId],
       );
 
+      if (released.rows.length > 0) {
+        await this.events.emit(client, {
+          eventName: DomainEventName.InventoryReservationReleased,
+          aggregateType: 'order',
+          aggregateId: orderId,
+          payload: { reason: reason ?? 'ORDER_CANCELLED', releasedLines: released.rows.length, releasedUnits },
+        });
+      }
       await this.events.emit(client, {
         eventName: DomainEventName.OrderCancelled,
         aggregateType: 'order',
         aggregateId: orderId,
-        payload: { orderId, orderNumber: row.order_number, reason: reason ?? 'buyer cancelled', releasedReservations: reservations.rowCount ?? 0 },
-      });
-      await this.events.emit(client, {
-        eventName: DomainEventName.InventoryReservationReleased,
-        aggregateType: 'order',
-        aggregateId: orderId,
-        payload: { orderId, releasedReservations: reservations.rowCount ?? 0 },
+        payload: {
+          orderNumber: order.order_number,
+          buyerId,
+          reason: reason ?? 'Cancelled by the buyer',
+          releasedUnits,
+        },
       });
       await this.audit.record(client, {
         action: 'order.cancelled',
         resourceType: 'order',
         resourceId: orderId,
-        metadata: { reason: reason ?? null, fromStatus: row.status },
+        metadata: { orderNumber: order.order_number, releasedLines: released.rows.length, releasedUnits },
       });
 
-      return order2;
+      return { orderNumber: order.order_number, releasedLines: released.rows.length, releasedUnits };
     });
 
-    return this.presentOrder(this.database, buyerId, cancelled.id);
+    const detail = await this.detailInternal(orderId, buyerId);
+    return { ...detail, cancellation: outcome };
   }
 
-  /* ---------------------------------------------------------------- internals */
-
-  private requireBuyer(actor: AuthenticatedActor): string {
-    if (!actor.buyerId) {
-      throw new DomainError(ErrorCode.FORBIDDEN, 'Only a retailer account can place or read orders');
-    }
-    return actor.buyerId;
-  }
-
-  /** Validate buyer, address, delivery mode/slot and price the live basket. Never mutates anything. */
-  private async buildContext(
-    queryable: DatabaseType,
-    buyerId: string,
-    input: CheckoutQuoteInput,
-  ) {
-    const buyer = await queryable.row<{ id: string; status: string; verification_status: string }>(
-      `SELECT id, status, verification_status FROM buyers WHERE id = $1`,
-      [buyerId],
-    );
-    if (!buyer) throw new DomainError(ErrorCode.FORBIDDEN, 'Retailer account not found');
-    if (buyer.status === 'SUSPENDED' || buyer.status === 'DEACTIVATED') {
-      throw new DomainError(ErrorCode.BUYER_SUSPENDED, 'This retailer account cannot place orders at the moment');
-    }
-
-    const address = await queryable.row<{
-      id: string;
-      label: string;
-      contact_name: string;
-      contact_phone: string;
-      address_line_1: string;
-      address_line_2: string | null;
-      landmark: string | null;
-      city: string;
-      state: string;
-      postal_code: string;
-      country: string;
-      latitude: string | null;
-      longitude: string | null;
-    }>(
-      `SELECT id, label, contact_name, contact_phone, address_line_1, address_line_2, landmark, city, state,
-              postal_code, country, latitude, longitude
-         FROM buyer_addresses
-        WHERE id = $1 AND buyer_id = $2 AND status = 'ACTIVE'`,
-      [input.deliveryAddressId, buyerId],
-    );
-    if (!address) {
-      throw new DomainError(ErrorCode.DELIVERY_ADDRESS_INVALID, 'The delivery address does not belong to this account or is archived');
-    }
-
-    const cart = await queryable.row<{ id: string; status: string; currency: string }>(
-      `SELECT id, status, currency FROM carts
-        WHERE buyer_id = $1 AND status IN ('ACTIVE','CHECKOUT_STARTED')
-        ORDER BY created_at DESC LIMIT 1`,
-      [buyerId],
-    );
-
-    const issues: CheckoutIssue[] = [];
-    const lines: PricedLine[] = [];
-    let currency = cart?.currency ?? this.config.DEFAULT_CURRENCY;
-
-    if (cart) {
-      const cartLines = await this.loadCartLines(queryable, cart.id, false);
-      currency = cart.currency;
-      for (const row of cartLines) {
-        issues.push(...this.validateLine(row, buyer));
-        lines.push(this.priceLine(row));
-      }
-    } else {
-      issues.push({ code: 'CART_EMPTY', message: 'Your basket is empty' });
-    }
-
-    const delivery = await this.resolveDelivery(queryable, buyerId, address, input, lines, issues);
-
-    const subtotal = round2(lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0));
-    const discountTotal = round2(lines.reduce((sum, line) => sum + line.discountAmount, 0));
-    const taxTotal = round2(lines.reduce((sum, line) => sum + line.taxAmount, 0));
-    const grandTotal = round2(subtotal - discountTotal + taxTotal + delivery.fee);
-
-    return {
-      buyer,
-      cartId: cart?.id ?? null,
-      currency,
-      address: {
-        id: address.id,
-        label: address.label,
-        contactName: address.contact_name,
-        contactPhone: address.contact_phone,
-        addressLine1: address.address_line_1,
-        addressLine2: address.address_line_2,
-        landmark: address.landmark,
-        city: address.city,
-        state: address.state,
-        postalCode: address.postal_code,
-        country: address.country,
-        latitude: address.latitude === null ? null : Number(address.latitude),
-        longitude: address.longitude === null ? null : Number(address.longitude),
-      },
-      deliveryDate: delivery.deliveryDate,
-      deliverySlot: delivery.slot,
-      lines,
-      issues,
-      totals: {
-        subtotal,
-        discountTotal,
-        taxTotal,
-        deliveryFee: delivery.fee,
-        grandTotal,
-        currency,
-      },
-    };
-  }
-
-  private async loadCartLines(
-    queryable: { query: DatabaseType['query'] },
-    cartId: string,
-    forUpdate: boolean,
-  ): Promise<CartLineRow[]> {
-    const sql = `SELECT ci.id AS cart_item_id, ci.supplier_listing_id, ci.supplier_id, ci.quantity,
-                        s.display_name AS supplier_name, s.city AS supplier_city,
-                        s.status AS supplier_status, s.verification_status AS supplier_verification_status,
-                        p.id AS product_id, p.name AS product_name, p.composition_summary,
-                        p.pack_size, p.prescription_classification, p.status AS product_status,
-                        m.name AS manufacturer_name,
-                        l.selling_price, l.mrp_reference, l.tax_rate, l.minimum_order_quantity, l.status AS listing_status,
-                        i.id AS inventory_id, i.available_quantity, i.reserved_quantity, i.batch_number, i.expiry_date
-                   FROM cart_items ci
-                   JOIN carts c ON c.id = ci.cart_id
-                   JOIN supplier_product_listings l ON l.id = ci.supplier_listing_id
-                   JOIN suppliers s ON s.id = ci.supplier_id
-                   JOIN products p ON p.id = l.product_id
-                   LEFT JOIN manufacturers m ON m.id = p.manufacturer_id
-                   LEFT JOIN inventories i ON i.supplier_listing_id = l.id
-                  WHERE c.id = $1
-                  ORDER BY s.display_name, p.name${forUpdate ? '\n                  FOR UPDATE OF ci' : ''}`;
-    const result = await queryable.query<CartLineRow>(sql, [cartId]);
-    return result.rows;
-  }
-
-  private validateLine(row: CartLineRow, buyer: { verification_status: string }): CheckoutIssue[] {
-    const issues: CheckoutIssue[] = [];
-    const sellable = Math.max((row.available_quantity ?? 0) - (row.reserved_quantity ?? 0), 0);
-    if (row.listing_status !== 'ACTIVE') {
-      issues.push({ code: 'LISTING_UNAVAILABLE', message: `${row.product_name} is no longer offered by ${row.supplier_name}`, supplierProductId: row.supplier_listing_id });
-    }
-    if (row.supplier_status !== 'ACTIVE' || row.supplier_verification_status !== 'VERIFIED') {
-      issues.push({ code: 'SUPPLIER_NOT_VERIFIED', message: `${row.supplier_name} is not currently verified to sell`, supplierProductId: row.supplier_listing_id });
-    }
-    if (row.product_status !== 'PUBLISHED') {
-      issues.push({ code: 'PRODUCT_UNAVAILABLE', message: `${row.product_name} is not currently published`, supplierProductId: row.supplier_listing_id });
-    }
-    if (row.quantity > sellable) {
-      issues.push({
-        code: 'INSUFFICIENT_STOCK',
-        message: `Only ${sellable} unit(s) of ${row.product_name} are available right now`,
-        supplierProductId: row.supplier_listing_id,
-      });
-    }
-    if (row.quantity < row.minimum_order_quantity) {
-      issues.push({
-        code: 'BELOW_MINIMUM_QUANTITY',
-        message: `The minimum order quantity for ${row.product_name} is ${row.minimum_order_quantity}`,
-        supplierProductId: row.supplier_listing_id,
-      });
-    }
-    if (this.isRestricted(row.prescription_classification) && buyer.verification_status !== 'VERIFIED') {
-      issues.push({
-        code: 'BUYER_NOT_VERIFIED_FOR_RESTRICTED_ITEM',
-        message: `${row.product_name} requires a verified retailer licence`,
-        supplierProductId: row.supplier_listing_id,
-      });
-    }
-    if (row.expiry_date && row.expiry_date.getTime() < Date.now() + 30 * 24 * 60 * 60 * 1000) {
-      issues.push({
-        code: 'BATCH_EXPIRING',
-        message: `Batch ${row.batch_number ?? '—'} of ${row.product_name} expires on ${row.expiry_date.toISOString().slice(0, 10)}`,
-        supplierProductId: row.supplier_listing_id,
-      });
-    }
-    return issues;
-  }
-
-  private priceLine(row: CartLineRow): PricedLine {
-    const unitPrice = Number(row.selling_price);
-    const taxRate = row.tax_rate ? Number(row.tax_rate) : 0;
-    const lineSubtotal = round2(unitPrice * row.quantity);
-    const taxAmount = round2((lineSubtotal * taxRate) / 100);
-    return {
-      cartItemId: row.cart_item_id,
-      supplierListingId: row.supplier_listing_id,
-      supplierId: row.supplier_id,
-      supplierName: row.supplier_name,
-      productId: row.product_id,
-      productName: row.product_name,
-      manufacturerName: row.manufacturer_name,
-      packSize: row.pack_size,
-      quantity: row.quantity,
-      unitPrice,
-      mrpReference: row.mrp_reference === null ? null : Number(row.mrp_reference),
-      taxRate,
-      discountAmount: 0,
-      taxAmount,
-      lineTotal: round2(lineSubtotal + taxAmount),
-    };
-  }
+  /* --------------------------------------------------------------- internals */
 
   /**
-   * Delivery validation: the address must be inside at least one ordering supplier's service area, the
-   * mode must be supported for that address, and a scheduled order must name an active slot.
-   * The fee is configuration-driven (`DELIVERY_FEE_DEFAULT` + `INSTANT_DELIVERY_SURCHARGE`).
+   * Shared validation + pricing used by both the quote and the order.
+   *
+   * `queryable` is either the pool or the transaction client, which is what lets the order path price
+   * and reserve inside one atomic unit while the quote path stays read-only.
    */
-  private async resolveDelivery(
-    queryable: Pick<DatabaseType, 'row' | 'rows'>,
+  private async prepare(
+    queryable: Queryable,
     buyerId: string,
-    address: { postal_code: string; city: string; state: string },
     input: CheckoutQuoteInput,
-    lines: PricedLine[],
-    issues: CheckoutIssue[],
+    paymentMethod: string | null,
   ) {
+    const cart = (
+      await queryable.query<{ id: string; currency: string }>(
+      `SELECT id, currency FROM carts
+        WHERE buyer_id = $1 AND status IN ('ACTIVE','CHECKOUT_STARTED')
+        ORDER BY created_at DESC LIMIT 1`,
+        [buyerId],
+      )
+    ).rows[0];
+    if (!cart) throw new DomainError(ErrorCode.CART_EMPTY, 'Your basket is empty');
+
+    const buyer = (
+      await queryable.query<{ status: string; verification_status: string }>(
+        `SELECT status, verification_status FROM buyers WHERE id = $1`,
+        [buyerId],
+      )
+    ).rows[0];
+    if (!buyer || buyer.status !== 'ACTIVE') {
+      throw new DomainError(ErrorCode.BUYER_SUSPENDED, 'This account cannot place orders right now');
+    }
+
+    const address = (
+      await queryable.query<AddressRow>(
+        `SELECT id, label, contact_name, contact_phone, address_line_1, address_line_2, landmark, city, state,
+                postal_code, country, latitude, longitude
+           FROM buyer_addresses
+          WHERE id = $1 AND buyer_id = $2 AND status = 'ACTIVE'`,
+        [input.deliveryAddressId, buyerId],
+      )
+    ).rows[0];
+    if (!address) {
+      throw new DomainError(ErrorCode.DELIVERY_ADDRESS_INVALID, 'Choose a valid delivery address of your own', {
+        details: { deliveryAddressId: input.deliveryAddressId },
+      });
+    }
+
+    const rows = (await queryable.query<{
+      cart_item_id: string;
+      listing_id: string;
+      supplier_id: string;
+      supplier_name: string;
+      supplier_status: string;
+      supplier_verification_status: string;
+      product_id: string;
+      product_name: string;
+      manufacturer_name: string | null;
+      composition: string | null;
+      pack_size: string | null;
+      pack_unit: string | null;
+      prescription_classification: string;
+      product_status: string;
+      listing_status: string;
+      quantity: number;
+      selling_price: string;
+      mrp_reference: string | null;
+      tax_rate: string | null;
+      minimum_order_quantity: number;
+      inventory_id: string | null;
+      inventory_status: string | null;
+      available_quantity: number | null;
+      reserved_quantity: number | null;
+    }>(
+      `SELECT ci.id AS cart_item_id, ci.supplier_listing_id AS listing_id, ci.supplier_id,
+              s.display_name AS supplier_name, s.status AS supplier_status,
+              s.verification_status AS supplier_verification_status,
+              p.id AS product_id, p.name AS product_name, p.prescription_classification,
+              p.status AS product_status, p.pack_size, p.pack_unit,
+              m.name AS manufacturer_name, p.composition_summary AS composition,
+              ci.quantity, l.selling_price, l.mrp_reference, l.tax_rate, l.minimum_order_quantity,
+              l.status AS listing_status,
+              i.id AS inventory_id, i.status AS inventory_status,
+              i.available_quantity, i.reserved_quantity
+         FROM cart_items ci
+         JOIN supplier_product_listings l ON l.id = ci.supplier_listing_id
+         JOIN suppliers s ON s.id = ci.supplier_id
+         JOIN products p ON p.id = l.product_id
+         LEFT JOIN manufacturers m ON m.id = p.manufacturer_id
+         LEFT JOIN inventories i ON i.supplier_listing_id = l.id
+          WHERE ci.cart_id = $1
+          ORDER BY s.display_name, p.name`,
+        [cart.id],
+      )
+    ).rows;
+
+    const issues: Array<{ code: string; message: string; supplierProductId?: string }> = [];
+    const lines: PricedLine[] = [];
+
+    for (const row of rows) {
+      let issue: string | null = null;
+      const sellable = Math.max((row.available_quantity ?? 0) - (row.reserved_quantity ?? 0), 0);
+
+      if (!row.inventory_id || !SELLABLE_INVENTORY_STATUSES.includes(row.inventory_status ?? '')) {
+        issue = 'INVENTORY_UNAVAILABLE';
+      } else if (row.listing_status !== 'ACTIVE') {
+        issue = 'LISTING_UNAVAILABLE';
+      } else if (row.supplier_status !== 'ACTIVE' || row.supplier_verification_status !== 'VERIFIED') {
+        issue = 'SUPPLIER_NOT_VERIFIED';
+      } else if (row.product_status !== 'PUBLISHED') {
+        issue = 'PRODUCT_UNAVAILABLE';
+      } else if (row.quantity < row.minimum_order_quantity) {
+        issue = 'BELOW_MINIMUM_QUANTITY';
+      } else if (row.quantity > sellable) {
+        issue = 'INSUFFICIENT_STOCK';
+      } else if (
+        this.isRestricted(row.prescription_classification) &&
+        buyer.verification_status !== 'VERIFIED'
+      ) {
+        issue = 'BUYER_NOT_VERIFIED_FOR_RESTRICTED_ITEM';
+      }
+
+      const unitPrice = Number(row.selling_price);
+      const taxRate = row.tax_rate ? Number(row.tax_rate) : 0;
+      const lineSubtotal = this.round(unitPrice * row.quantity);
+      const lineTax = this.round((lineSubtotal * taxRate) / 100);
+
+      lines.push({
+        cartItemId: row.cart_item_id,
+        listingId: row.listing_id,
+        supplierId: row.supplier_id,
+        supplierName: row.supplier_name,
+        productId: row.product_id,
+        productName: row.product_name,
+        manufacturerName: row.manufacturer_name,
+        composition: row.composition,
+        packSize: [row.pack_size, row.pack_unit].filter(Boolean).join(' ') || null,
+        unitPrice,
+        mrpReference: row.mrp_reference ? Number(row.mrp_reference) : null,
+        taxRate,
+        quantity: row.quantity,
+        lineSubtotal,
+        lineTax,
+        lineTotal: this.round(lineSubtotal + lineTax),
+        inventoryId: row.inventory_id ?? '',
+        availableQuantity: row.available_quantity ?? 0,
+        reservedQuantity: row.reserved_quantity ?? 0,
+        minimumOrderQuantity: row.minimum_order_quantity,
+        issue,
+      });
+    }
+
+    /* Serviceability: the supplier must have declared this postal code for this delivery mode.
+       Missing coverage is reported, never silently dropped from the order. */
     const supplierIds = [...new Set(lines.map((line) => line.supplierId))];
-    let serviceable = false;
     if (supplierIds.length > 0) {
-      const covered = await queryable.row<{ count: string }>(
-        `SELECT count(*)::TEXT AS count
-           FROM supplier_service_areas
-          WHERE supplier_id = ANY($1::uuid[])
-            AND active = TRUE
-            AND (postal_code = $2 OR lower(city) = lower($3))
-            AND ($4 = 'INSTANT' AND service_type IN ('DELIVERY','BOTH') OR $4 = 'SCHEDULED' AND service_type IN ('DELIVERY','PICKUP','BOTH'))`,
-        [supplierIds, address.postal_code, address.city, input.deliveryMode],
-      );
-      serviceable = Number(covered?.count ?? 0) > 0;
-    }
-
-    if (lines.length > 0 && !serviceable) {
-      issues.push({
-        code: 'ADDRESS_NOT_SERVICEABLE',
-        message: `No supplier delivers ${input.deliveryMode.toLowerCase()} orders to ${address.city} (${address.postal_code}) yet`,
-      });
-    }
-
-    let slot: { id: string; name: string; start_time: string; end_time: string } | null = null;
-    let deliveryDate: string | null = null;
-
-    if (input.deliveryMode === 'SCHEDULED') {
-      if (!input.deliverySlotId) {
-        issues.push({ code: 'DELIVERY_SLOT_REQUIRED', message: 'Choose a delivery window for a scheduled order' });
-      } else {
-        const found = await queryable.row<{ id: string; name: string; start_time: string; end_time: string }>(
-          `SELECT id, name, start_time::TEXT AS start_time, end_time::TEXT AS end_time
-             FROM delivery_slots WHERE id = $1 AND active = TRUE`,
-          [input.deliverySlotId],
-        );
-        if (!found) {
-          issues.push({ code: 'DELIVERY_SLOT_INVALID', message: 'The selected delivery window is no longer available' });
-        } else {
-          slot = found;
-        }
-      }
-      deliveryDate = input.deliveryDate ?? todayInTimezone(this.config.BUSINESS_TIMEZONE);
-      if (deliveryDate < todayInTimezone(this.config.BUSINESS_TIMEZONE)) {
-        issues.push({ code: 'DELIVERY_DATE_INVALID', message: 'The delivery date cannot be in the past' });
+      const areas = (
+        await queryable.query<{ supplier_id: string; service_type: string }>(
+          `SELECT supplier_id, service_type FROM supplier_service_areas
+            WHERE supplier_id = ANY($1::UUID[]) AND postal_code = $2 AND active = TRUE`,
+          [supplierIds, address.postal_code],
+        )
+      ).rows;
+      const required = input.deliveryMode === DeliveryMode.INSTANT ? ['INSTANT', 'BOTH'] : ['SCHEDULED', 'BOTH'];
+      const covered = new Set(areas.filter((area) => required.includes(area.service_type)).map((area) => area.supplier_id));
+      for (const supplierId of supplierIds) {
+        if (covered.has(supplierId)) continue;
+        const supplierName = lines.find((line) => line.supplierId === supplierId)?.supplierName ?? 'A supplier';
+        issues.push({
+          code: 'DELIVERY_UNAVAILABLE',
+          message:
+            input.deliveryMode === DeliveryMode.INSTANT
+              ? `${supplierName} does not offer instant delivery to ${address.postal_code}`
+              : `${supplierName} does not deliver to ${address.postal_code} yet`,
+        });
       }
     }
 
-    const fee = round2(
-      input.deliveryMode === 'INSTANT'
-        ? this.config.DELIVERY_FEE_DEFAULT + this.config.INSTANT_DELIVERY_SURCHARGE
-        : this.config.DELIVERY_FEE_DEFAULT,
+    const deliveryDate = this.resolveDeliveryDate(input, issues);
+    const deliverySlotId = await this.resolveSlot(queryable, input, deliveryDate, issues);
+
+    const subtotal = this.round(
+      lines.filter((line) => !line.issue).reduce((total, line) => total + line.lineSubtotal, 0),
+    );
+    const taxTotal = this.round(
+      lines.filter((line) => !line.issue).reduce((total, line) => total + line.lineTax, 0),
     );
 
-    void buyerId;
-    return { fee, slot, deliveryDate };
+    return {
+      cartId: cart.id,
+      currency: cart.currency,
+      address,
+      lines,
+      issues,
+      subtotal,
+      taxTotal,
+      deliveryDate,
+      deliverySlotId,
+      paymentMethod,
+    };
   }
 
-  private isRestricted(classification: string): boolean {
-    return (
-      classification === PrescriptionClassification.PRESCRIPTION_REQUIRED ||
-      classification === PrescriptionClassification.CONTROLLED_SCHEDULE ||
-      classification === PrescriptionClassification.NARCOTIC
-    );
-  }
-
-  /** Create the gateway intent after the order is committed. A failure never loses the order. */
-  private async initiatePayment(
-    order: OrderRow,
-    paymentId: string,
-    method: (typeof PAYMENT_METHODS)[number],
-    buyerId: string,
-  ) {
-    if (method === 'COD') {
-      await this.database.query(`UPDATE payments SET status = 'PENDING', updated_at = now() WHERE id = $1`, [paymentId]);
-      return {
-        id: paymentId,
-        gateway: 'cod',
-        status: 'PENDING',
-        amount: Number(order.grand_total),
-        currency: order.currency,
-        method,
-        providerReference: null,
-        providerPayload: null,
-        failureCode: null,
-        failureMessage: 'Cash on delivery is collected at hand-over',
-      };
-    }
-
-    try {
-      const intent = await this.paymentProvider.createIntent({
-        orderId: order.id,
-        orderNumber: order.order_number,
-        amount: Number(order.grand_total),
-        currency: order.currency,
-        method,
-        buyerId,
-        idempotencyKey: paymentId,
-      });
-
-      await this.database.transaction(async (client) => {
-        await client.query(
-          `UPDATE payments
-              SET gateway_payment_reference = $2, gateway_order_reference = $3, updated_at = now()
-            WHERE id = $1`,
-          [paymentId, intent.providerReference, intent.providerOrderReference],
-        );
-        await client.query(
-          `INSERT INTO payment_attempts (payment_id, gateway, gateway_attempt_reference, status, amount)
-           VALUES ($1,$2,$3,'INITIATED',$4)`,
-          [paymentId, this.paymentProvider.name, intent.providerReference, Number(order.grand_total)],
-        );
-        await this.events.emit(client, {
-          eventName: DomainEventName.PaymentInitiated,
-          aggregateType: 'payment',
-          aggregateId: paymentId,
-          payload: { paymentId, orderId: order.id, amount: Number(order.grand_total), currency: order.currency, method },
+  private resolveDeliveryDate(
+    input: CheckoutQuoteInput,
+    issues: Array<{ code: string; message: string }>,
+  ): string | null {
+    if (input.deliveryMode === DeliveryMode.INSTANT) {
+      if (input.deliveryDate) {
+        issues.push({
+          code: 'DELIVERY_DATE_NOT_APPLICABLE',
+          message: 'An instant delivery is dispatched within the hour — pick a slot date on a scheduled order',
         });
-      });
-
-      return {
-        id: paymentId,
-        gateway: this.paymentProvider.name,
-        status: 'PENDING',
-        amount: Number(order.grand_total),
-        currency: order.currency,
-        method,
-        providerReference: intent.providerReference,
-        providerPayload: intent.providerPayload,
-        failureCode: null,
-        failureMessage: null,
-      };
-    } catch (error) {
-      /* The order exists and is payable, so the failure is recorded on the payment and returned —
-         throwing here would tell the client the order failed when it did not. */
-      const message = error instanceof Error ? error.message : 'The payment gateway could not be reached';
-      await this.database.transaction(async (client) => {
-        await client.query(
-          `UPDATE payments SET status = 'FAILED', failed_at = now(), failure_code = 'PROVIDER_ERROR', failure_message = $2, updated_at = now()
-            WHERE id = $1`,
-          [paymentId, message],
-        );
-        await client.query(
-          `INSERT INTO payment_attempts (payment_id, gateway, status, amount, failure_code, failure_message)
-           VALUES ($1,$2,'FAILED',$3,'PROVIDER_ERROR',$4)`,
-          [paymentId, this.paymentProvider.name, Number(order.grand_total), message],
-        );
-        await this.events.emit(client, {
-          eventName: DomainEventName.PaymentFailed,
-          aggregateType: 'payment',
-          aggregateId: paymentId,
-          payload: { paymentId, orderId: order.id, reason: message },
-        });
-      });
-      return {
-        id: paymentId,
-        gateway: this.paymentProvider.name,
-        status: 'FAILED',
-        amount: Number(order.grand_total),
-        currency: order.currency,
-        method,
-        providerReference: null,
-        providerPayload: null,
-        failureCode: 'PROVIDER_ERROR',
-        failureMessage: message,
-      };
+      }
+      return null;
     }
+    if (!input.deliveryDate) return null;
+    const today = new Date();
+    /* Business timezone is Asia/Kolkata; compare on the calendar date rather than raw ms so a late
+       evening order in IST is not rejected by a UTC clock. */
+    const todayIst = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.config.BUSINESS_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(today);
+    if (input.deliveryDate < todayIst) {
+      issues.push({ code: 'DELIVERY_DATE_IN_PAST', message: 'The delivery date cannot be in the past' });
+    }
+    return input.deliveryDate;
   }
 
-  private async recomputeFulfillmentTotals(
-    client: { query: DatabaseType['query'] },
-    fulfillmentIds: string[],
-  ): Promise<void> {
-    if (fulfillmentIds.length === 0) return;
-    await client.query(
-      `UPDATE fulfillments f
-          SET subtotal = agg.subtotal,
-              tax_total = agg.tax_total,
-              discount_total = agg.discount_total,
-              total = agg.subtotal - agg.discount_total + agg.tax_total,
-              updated_at = now()
-         FROM (
-           SELECT fi.fulfillment_id,
-                  COALESCE(SUM(oi.unit_price * fi.quantity), 0) AS subtotal,
-                  COALESCE(SUM(oi.tax_amount), 0) AS tax_total,
-                  COALESCE(SUM(oi.discount_amount), 0) AS discount_total
-             FROM fulfillment_items fi
-             JOIN order_items oi ON oi.id = fi.order_item_id
-            WHERE fi.fulfillment_id = ANY($1::uuid[])
-            GROUP BY fi.fulfillment_id
-         ) agg
-        WHERE f.id = agg.fulfillment_id`,
-      [fulfillmentIds],
-    );
+  private async resolveSlot(
+    queryable: Queryable,
+    input: CheckoutQuoteInput,
+    deliveryDate: string | null,
+    issues: Array<{ code: string; message: string }>,
+  ): Promise<string | null> {
+    if (input.deliveryMode === DeliveryMode.INSTANT) {
+      if (input.deliverySlotId) {
+        issues.push({
+          code: 'DELIVERY_SLOT_NOT_APPLICABLE',
+          message: 'Instant deliveries are not bound to a slot',
+        });
+      }
+      return null;
+    }
+    if (!input.deliverySlotId) {
+      issues.push({ code: 'DELIVERY_SLOT_REQUIRED', message: 'Choose a delivery slot for a scheduled order' });
+      return null;
+    }
+    const slot = (
+      await queryable.query<{ id: string; name: string }>(
+        `SELECT id, name FROM delivery_slots WHERE id = $1 AND active = TRUE`,
+        [input.deliverySlotId],
+      )
+    ).rows[0];
+    if (!slot) {
+      issues.push({ code: 'DELIVERY_SLOT_UNAVAILABLE', message: 'That delivery slot is no longer offered' });
+      return null;
+    }
+    if (!deliveryDate) {
+      issues.push({ code: 'DELIVERY_DATE_REQUIRED', message: 'Choose a delivery date for a scheduled order' });
+      return null;
+    }
+    return slot.id;
   }
 
-  /** Assemble the buyer-visible order: lines, fulfillments, payment, timeline. */
-  private async presentOrder(queryable: Pick<DatabaseType, 'row' | 'rows'>, buyerId: string, orderId: string) {
-    const order = await queryable.row<OrderRow & { item_count: string; supplier_count: string }>(
-      `SELECT o.*, ds.name AS delivery_slot_name,
-              COALESCE(items.item_count, 0)::TEXT AS item_count,
-              COALESCE(items.supplier_count, 0)::TEXT AS supplier_count
-         FROM orders o
-         LEFT JOIN delivery_slots ds ON ds.id = o.delivery_slot_id
-         LEFT JOIN (
-              SELECT order_id, count(*) AS item_count, count(DISTINCT supplier_id) AS supplier_count
-                FROM order_items GROUP BY order_id
-         ) items ON items.order_id = o.id
-        WHERE o.id = $1 AND o.buyer_id = $2`,
+  /** Delivery pricing lives in configuration; the total is what the buyer pays, whoever fulfils. */
+  private deliveryFee(mode: string) {
+    const base = Number(this.config.DELIVERY_FEE_DEFAULT);
+    const surcharge = mode === DeliveryMode.INSTANT ? Number(this.config.INSTANT_DELIVERY_SURCHARGE) : 0;
+    return {
+      total: this.round(base + surcharge),
+      breakdown: {
+        base,
+        instantSurcharge: surcharge,
+        currency: this.config.DEFAULT_CURRENCY,
+      },
+    };
+  }
+
+  /** Split an amount into `parts` shares whose sum is exactly the original amount. */
+  private splitFee(amount: number, parts: number): number[] {
+    if (parts <= 0) return [];
+    const share = Math.floor((amount * 100) / parts) / 100;
+    const shares = new Array<number>(parts).fill(share);
+    shares[0] = this.round(amount - share * (parts - 1));
+    return shares;
+  }
+
+  private async detailInternal(orderId: string, buyerId: string) {
+    const order = await this.database.row<{
+      id: string;
+      order_number: string;
+      status: string;
+      payment_status: string;
+      currency: string;
+      subtotal: string;
+      discount_total: string;
+      tax_total: string;
+      delivery_fee: string;
+      grand_total: string;
+      delivery_mode: string;
+      delivery_date: Date | null;
+      shipping_address_snapshot: Record<string, unknown>;
+      buyer_note: string | null;
+      placed_at: Date | null;
+      confirmed_at: Date | null;
+      cancelled_at: Date | null;
+      completed_at: Date | null;
+      created_at: Date;
+      checkout_session_id: string | null;
+    }>(
+      `SELECT o.* FROM orders o WHERE o.id = $1 AND o.buyer_id = $2`,
       [orderId, buyerId],
     );
     if (!order) throw new DomainError(ErrorCode.ORDER_NOT_FOUND, 'Order not found');
 
-    const items = await queryable.rows<{
+    const items = await this.database.rows<{
       id: string;
-      fulfillment_id: string;
       product_id: string;
       supplier_listing_id: string;
       supplier_id: string;
-      supplier_name: string;
+      supplier_name: string | null;
       product_name_snapshot: string;
       manufacturer_snapshot: string | null;
+      composition_snapshot: string | null;
       pack_size_snapshot: string | null;
       unit_price: string;
       mrp_snapshot: string | null;
@@ -1108,42 +1213,51 @@ export class OrdersService {
       line_total: string;
       status: string;
     }>(
-      `SELECT oi.id, fi.fulfillment_id, oi.product_id, oi.supplier_listing_id, oi.supplier_id,
-              s.display_name AS supplier_name, oi.product_name_snapshot, oi.manufacturer_snapshot,
-              oi.pack_size_snapshot, oi.unit_price, oi.mrp_snapshot, oi.tax_rate_snapshot, oi.quantity,
-              oi.discount_amount, oi.tax_amount, oi.line_total, oi.status
+      `SELECT oi.id, oi.product_id, oi.supplier_listing_id, oi.supplier_id, s.display_name AS supplier_name,
+              oi.product_name_snapshot, oi.manufacturer_snapshot, oi.composition_snapshot, oi.pack_size_snapshot,
+              oi.unit_price, oi.mrp_snapshot, oi.tax_rate_snapshot, oi.quantity, oi.discount_amount, oi.tax_amount,
+              oi.line_total, oi.status
          FROM order_items oi
-         JOIN fulfillments f ON f.order_id = oi.order_id AND f.supplier_id = oi.supplier_id
-         JOIN fulfillment_items fi ON fi.order_item_id = oi.id AND fi.fulfillment_id = f.id
-         JOIN suppliers s ON s.id = oi.supplier_id
+         LEFT JOIN suppliers s ON s.id = oi.supplier_id
         WHERE oi.order_id = $1
-        ORDER BY s.display_name, oi.product_name_snapshot`,
+        ORDER BY s.display_name NULLS LAST, oi.product_name_snapshot`,
       [orderId],
     );
 
-    const fulfillments = await queryable.rows<{
+    const fulfillments = await this.database.rows<{
       id: string;
       fulfillment_reference: string;
       supplier_id: string;
-      supplier_name: string;
+      supplier_name: string | null;
       status: string;
       subtotal: string;
+      discount_total: string;
       tax_total: string;
       delivery_allocation: string;
       total: string;
       package_count: number;
-      created_at: Date;
+      accepted_at: Date | null;
+      packed_at: Date | null;
+      ready_at: Date | null;
+      collected_at: Date | null;
+      delivered_at: Date | null;
+      cancelled_at: Date | null;
+      item_count: string;
+      unit_count: string;
     }>(
       `SELECT f.id, f.fulfillment_reference, f.supplier_id, s.display_name AS supplier_name, f.status,
-              f.subtotal, f.tax_total, f.delivery_allocation, f.total, f.package_count, f.created_at
+              f.subtotal, f.discount_total, f.tax_total, f.delivery_allocation, f.total, f.package_count,
+              f.accepted_at, f.packed_at, f.ready_at, f.collected_at, f.delivered_at, f.cancelled_at,
+              (SELECT count(*)::TEXT FROM fulfillment_items fi WHERE fi.fulfillment_id = f.id) AS item_count,
+              (SELECT COALESCE(sum(fi.quantity),0)::TEXT FROM fulfillment_items fi WHERE fi.fulfillment_id = f.id) AS unit_count
          FROM fulfillments f
-         JOIN suppliers s ON s.id = f.supplier_id
+         LEFT JOIN suppliers s ON s.id = f.supplier_id
         WHERE f.order_id = $1
         ORDER BY f.fulfillment_reference`,
       [orderId],
     );
 
-    const payment = await queryable.row<{
+    const payment = await this.database.row<{
       id: string;
       gateway: string;
       status: string;
@@ -1151,17 +1265,20 @@ export class OrdersService {
       currency: string;
       payment_method_type: string;
       gateway_payment_reference: string | null;
+      gateway_order_reference: string | null;
       failure_code: string | null;
       failure_message: string | null;
       paid_at: Date | null;
+      refunded_amount: string;
     }>(
       `SELECT id, gateway, status, amount, currency, payment_method_type, gateway_payment_reference,
-              failure_code, failure_message, paid_at
-         FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`,
+              gateway_order_reference, failure_code, failure_message, paid_at, refunded_amount
+         FROM payments WHERE order_id = $1
+        ORDER BY created_at DESC LIMIT 1`,
       [orderId],
     );
 
-    const timeline = await queryable.rows<{
+    const timeline = await this.database.rows<{
       from_status: string | null;
       to_status: string;
       reason: string | null;
@@ -1169,27 +1286,52 @@ export class OrdersService {
       created_at: Date;
     }>(
       `SELECT from_status, to_status, reason, actor_type, created_at
-         FROM order_status_history WHERE order_id = $1 ORDER BY created_at`,
+         FROM order_status_history WHERE order_id = $1
+        ORDER BY created_at ASC`,
+      [orderId],
+    );
+
+    const reservations = await this.database.rows<{ status: string; quantity: number; expires_at: Date }>(
+      `SELECT status, quantity, expires_at FROM inventory_reservations WHERE order_id = $1`,
       [orderId],
     );
 
     return {
-      ...this.serializeOrderSummary(order),
-      address: order.shipping_address_snapshot,
+      id: order.id,
+      orderNumber: order.order_number,
+      status: order.status,
+      paymentStatus: order.payment_status,
+      currency: order.currency,
+      subtotal: Number(order.subtotal),
+      discountTotal: Number(order.discount_total),
+      taxTotal: Number(order.tax_total),
+      deliveryFee: Number(order.delivery_fee),
+      grandTotal: Number(order.grand_total),
+      deliveryMode: order.delivery_mode,
+      deliveryDate: order.delivery_date ? order.delivery_date.toISOString().slice(0, 10) : null,
+      shippingAddress: order.shipping_address_snapshot,
       buyerNote: order.buyer_note,
+      placedAt: order.placed_at?.toISOString() ?? null,
+      confirmedAt: order.confirmed_at?.toISOString() ?? null,
+      cancelledAt: order.cancelled_at?.toISOString() ?? null,
+      completedAt: order.completed_at?.toISOString() ?? null,
+      createdAt: order.created_at.toISOString(),
+      checkoutSessionId: order.checkout_session_id,
+      itemCount: items.reduce((total, item) => total + item.quantity, 0),
+      supplierCount: fulfillments.length,
       items: items.map((item) => ({
         id: item.id,
-        fulfillmentId: item.fulfillment_id,
         productId: item.product_id,
         supplierProductId: item.supplier_listing_id,
         supplierId: item.supplier_id,
         supplierName: item.supplier_name,
         productName: item.product_name_snapshot,
         manufacturerName: item.manufacturer_snapshot,
+        composition: item.composition_snapshot,
         packSize: item.pack_size_snapshot,
         unitPrice: Number(item.unit_price),
-        mrpReference: item.mrp_snapshot === null ? null : Number(item.mrp_snapshot),
-        taxRate: item.tax_rate_snapshot === null ? 0 : Number(item.tax_rate_snapshot),
+        mrpReference: item.mrp_snapshot ? Number(item.mrp_snapshot) : null,
+        taxRate: item.tax_rate_snapshot ? Number(item.tax_rate_snapshot) : null,
         quantity: item.quantity,
         discountAmount: Number(item.discount_amount),
         taxAmount: Number(item.tax_amount),
@@ -1207,7 +1349,14 @@ export class OrdersService {
         deliveryAllocation: Number(fulfillment.delivery_allocation),
         total: Number(fulfillment.total),
         packageCount: fulfillment.package_count,
-        createdAt: fulfillment.created_at,
+        itemCount: Number(fulfillment.item_count),
+        unitCount: Number(fulfillment.unit_count),
+        acceptedAt: fulfillment.accepted_at?.toISOString() ?? null,
+        packedAt: fulfillment.packed_at?.toISOString() ?? null,
+        readyAt: fulfillment.ready_at?.toISOString() ?? null,
+        collectedAt: fulfillment.collected_at?.toISOString() ?? null,
+        deliveredAt: fulfillment.delivered_at?.toISOString() ?? null,
+        cancelledAt: fulfillment.cancelled_at?.toISOString() ?? null,
       })),
       payment: payment
         ? {
@@ -1218,22 +1367,45 @@ export class OrdersService {
             currency: payment.currency,
             method: payment.payment_method_type,
             providerReference: payment.gateway_payment_reference,
+            providerOrderReference: payment.gateway_order_reference,
             failureCode: payment.failure_code,
             failureMessage: payment.failure_message,
-            paidAt: payment.paid_at,
+            paidAt: payment.paid_at?.toISOString() ?? null,
+            refundedAmount: Number(payment.refunded_amount),
           }
         : null,
+      activeReservations: reservations.filter((row) => row.status === ReservationStatus.ACTIVE).length,
+      reservationCount: reservations.length,
       timeline: timeline.map((entry) => ({
         fromStatus: entry.from_status,
         toStatus: entry.to_status,
         reason: entry.reason,
         actorType: entry.actor_type,
-        createdAt: entry.created_at,
+        createdAt: entry.created_at.toISOString(),
       })),
     };
   }
 
-  private serializeOrderSummary(row: OrderRow & { item_count?: string; supplier_count?: string }) {
+  private presentSummary(row: {
+    id: string;
+    order_number: string;
+    status: string;
+    payment_status: string;
+    currency: string;
+    subtotal: string;
+    tax_total: string;
+    delivery_fee: string;
+    grand_total: string;
+    delivery_mode: string;
+    delivery_date: Date | null;
+    placed_at: Date;
+    confirmed_at: Date | null;
+    cancelled_at: Date | null;
+    item_count: string;
+    unit_count: string;
+    supplier_count: string;
+    fulfillment_statuses: string[] | null;
+  }) {
     return {
       id: row.id,
       orderNumber: row.order_number,
@@ -1241,31 +1413,102 @@ export class OrdersService {
       paymentStatus: row.payment_status,
       currency: row.currency,
       subtotal: Number(row.subtotal),
-      discountTotal: Number(row.discount_total),
       taxTotal: Number(row.tax_total),
       deliveryFee: Number(row.delivery_fee),
       grandTotal: Number(row.grand_total),
       deliveryMode: row.delivery_mode,
       deliveryDate: row.delivery_date ? row.delivery_date.toISOString().slice(0, 10) : null,
-      deliverySlot: row.delivery_slot_id ? { id: row.delivery_slot_id, name: row.delivery_slot_name ?? null } : null,
-      itemCount: Number(row.item_count ?? 0),
-      supplierCount: Number(row.supplier_count ?? 0),
-      placedAt: row.placed_at,
-      confirmedAt: row.confirmed_at,
-      cancelledAt: row.cancelled_at,
-      cancellationReason: row.cancellation_reason,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      placedAt: row.placed_at.toISOString(),
+      confirmedAt: row.confirmed_at?.toISOString() ?? null,
+      cancelledAt: row.cancelled_at?.toISOString() ?? null,
+      itemCount: Number(row.item_count),
+      unitCount: Number(row.unit_count),
+      supplierCount: Number(row.supplier_count),
+      fulfillmentStatuses: row.fulfillment_statuses ?? [],
     };
   }
-}
 
-/* ------------------------------------------------------------------ helpers */
+  private presentLine(line: PricedLine) {
+    return {
+      supplierProductId: line.listingId,
+      productId: line.productId,
+      productName: line.productName,
+      manufacturerName: line.manufacturerName,
+      packSize: line.packSize,
+      supplierId: line.supplierId,
+      supplierName: line.supplierName,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      mrpReference: line.mrpReference,
+      taxRate: line.taxRate,
+      lineSubtotal: line.lineSubtotal,
+      lineTax: line.lineTax,
+      lineTotal: line.lineTotal,
+      sellableQuantity: Math.max(line.availableQuantity - line.reservedQuantity, 0),
+      issue: line.issue,
+    };
+  }
 
-function round2(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
+  private lineIssue(line: PricedLine) {
+    const messages: Record<string, string> = {
+      INVENTORY_UNAVAILABLE: `${line.productName} is not available for ordering right now`,
+      LISTING_UNAVAILABLE: `${line.productName} was paused by the supplier`,
+      SUPPLIER_NOT_VERIFIED: `${line.supplierName} is not verified to sell right now`,
+      PRODUCT_UNAVAILABLE: `${line.productName} is no longer published`,
+      BELOW_MINIMUM_QUANTITY: `Minimum order quantity for ${line.productName} is ${line.minimumOrderQuantity}`,
+      INSUFFICIENT_STOCK: `Only ${Math.max(line.availableQuantity - line.reservedQuantity, 0)} unit(s) of ${line.productName} remain`,
+      BUYER_NOT_VERIFIED_FOR_RESTRICTED_ITEM: `${line.productName} needs a verified drug licence on your account`,
+    };
+    return {
+      code: line.issue as string,
+      message: messages[line.issue as string] ?? 'This line cannot be ordered right now',
+      supplierProductId: line.listingId,
+    };
+  }
 
-function todayInTimezone(timezone: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date());
+  private presentAddress(address: AddressRow) {
+    return {
+      id: address.id,
+      label: address.label,
+      contactName: address.contact_name,
+      contactPhone: address.contact_phone,
+      addressLine1: address.address_line_1,
+      addressLine2: address.address_line_2,
+      landmark: address.landmark,
+      city: address.city,
+      state: address.state,
+      postalCode: address.postal_code,
+      country: address.country,
+    };
+  }
+
+  /** The snapshot is what the order ships to, even if the address is edited or deleted later. */
+  private addressSnapshot(address: AddressRow | null): Record<string, unknown> {
+    if (!address) return {};
+    return {
+      ...this.presentAddress(address),
+      latitude: address.latitude ? Number(address.latitude) : null,
+      longitude: address.longitude ? Number(address.longitude) : null,
+      capturedAt: new Date().toISOString(),
+    };
+  }
+
+  private isRestricted(classification: string): boolean {
+    return (
+      classification === PrescriptionClassification.CONTROLLED_SCHEDULE ||
+      classification === PrescriptionClassification.NARCOTIC
+    );
+  }
+
+  private requireBuyer(actor: AuthenticatedActor): string {
+    const buyerId = actor.buyerId ?? null;
+    if (!buyerId) {
+      throw new DomainError(ErrorCode.FORBIDDEN, 'Only a buyer account can use the checkout and order APIs');
+    }
+    return buyerId;
+  }
+
+  private round(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
 }

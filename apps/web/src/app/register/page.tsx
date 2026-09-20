@@ -212,8 +212,8 @@ export default function RegisterPage() {
             style={{
               textAlign: 'left',
               cursor: 'pointer',
-              borderColor: accountType === type.value ? 'var(--brand)' : undefined,
-              boxShadow: accountType === type.value ? 'var(--shadow-md)' : undefined,
+              borderColor: accountType === type.value ? 'var(--accent)' : undefined,
+              boxShadow: accountType === type.value ? 'var(--elevation-2)' : undefined,
             }}
             onClick={() => setAccountType(type.value)}
             aria-pressed={accountType === type.value}

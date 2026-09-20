@@ -134,6 +134,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
           fieldErrors: [],
         };
       }
+      // 22P02 = invalid_text_representation: a value that is not castable to the column type (for
+      // example a non-UUID identifier). That is a request-shape problem, never an internal failure.
+      if (error.code === '22P02') {
+        return {
+          status: HttpStatus.UNPROCESSABLE_ENTITY,
+          code: ErrorCode.VALIDATION_FAILED,
+          message: 'Request validation failed',
+          details: { reason: 'malformed_identifier' },
+          fieldErrors: [
+            { field: 'request', code: ErrorCode.VALIDATION_FAILED, message: 'An identifier in the request is malformed' },
+          ],
+        };
+      }
       if (error.code === '40001' || error.code === '40P01') {
         return {
           status: HttpStatus.CONFLICT,

@@ -84,6 +84,9 @@ export const DomainEventName = {
   InventoryLowStock: 'InventoryLowStock',
   // cart / checkout / order
   CartItemAdded: 'CartItemAdded',
+  // partner applications (public intake)
+  PartnerApplicationSubmitted: 'PartnerApplicationSubmitted',
+  PartnerApplicationStatusChanged: 'PartnerApplicationStatusChanged',
   CheckoutStarted: 'CheckoutStarted',
   CheckoutValidated: 'CheckoutValidated',
   OrderCreated: 'OrderCreated',

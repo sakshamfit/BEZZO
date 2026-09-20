@@ -370,3 +370,380 @@ export interface VersionSnapshot {
   apiBasePath: string;
   features: Record<string, string | boolean>;
 }
+
+/* --------------------------------------------------------------- applications */
+
+export type PartnerApplicationType = 'SUPPLIER' | 'PICKER' | 'RETAILER' | 'PARTNER';
+
+export type PartnerApplicationStatus =
+  | 'NEW'
+  | 'CONTACTED'
+  | 'IN_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'DUPLICATE';
+
+/**
+ * A partner application as returned by `POST /applications`.
+ *
+ * `whatsappUrl` is a `wa.me` deep link whose message already contains the reference and the submitted
+ * details; `routedToDisplay` is the operations line the application was routed to. Nothing here implies
+ * the message was delivered — the applicant sends it from their own WhatsApp.
+ */
+export interface PartnerApplication {
+  id: string;
+  reference: string;
+  applicationType: PartnerApplicationType;
+  status: PartnerApplicationStatus;
+  applicantName: string;
+  businessName: string;
+  contactPhone: string;
+  contactEmail: string | null;
+  city: string;
+  state: string;
+  postalCode: string | null;
+  gstin: string | null;
+  licenceReference: string | null;
+  yearsInBusiness: number | null;
+  monthlyVolume: string | null;
+  message: string | null;
+  routedToNumber: string;
+  routedToDisplay: string;
+  whatsappUrl: string;
+  deliveryChannel: string;
+  source: string;
+  reviewNotes: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `GET /applications/routing` — where applications are delivered. */
+export interface ApplicationRouting {
+  whatsappNumber: string;
+  whatsappNumberRaw: string;
+  whatsappUrl: string;
+  channel: string;
+}
+
+/** `GET /admin/applications/summary` — queue counters for the operations header. */
+export type ApplicationStatusCounts = Partial<Record<PartnerApplicationStatus, number>>;
+
+/* ---------------------------------------------------------------- checkout & orders */
+
+export interface DeliverySlot {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  maxCapacity: number | null;
+}
+
+/** A priced basket line as the server sees it: prices are never computed in the browser. */
+export interface CheckoutLine {
+  supplierProductId: string;
+  productId: string;
+  productName: string;
+  manufacturerName: string | null;
+  packSize: string | null;
+  supplierId: string;
+  supplierName: string;
+  quantity: number;
+  unitPrice: number;
+  mrpReference: number | null;
+  taxRate: number;
+  lineSubtotal: number;
+  lineTax: number;
+  lineTotal: number;
+  sellableQuantity: number;
+  issue: string | null;
+}
+
+export interface CheckoutIssue {
+  code: string;
+  message: string;
+  supplierProductId?: string;
+}
+
+export interface CheckoutQuote {
+  placeable: boolean;
+  currency: string;
+  deliveryMode: string;
+  deliveryFee: number;
+  deliveryFeeBreakdown: { base: number; instantSurcharge: number; currency: string };
+  subtotal: number;
+  taxTotal: number;
+  discountTotal: number;
+  grandTotal: number;
+  itemCount: number;
+  cartId: string;
+  supplierCount: number;
+  deliveryAddress: BuyerAddress | null;
+  issues: CheckoutIssue[];
+  lines: CheckoutLine[];
+  quotedAt: string;
+}
+
+export interface OrderSummary {
+  id: string;
+  orderNumber: string;
+  status: string;
+  paymentStatus: string;
+  currency: string;
+  subtotal: number;
+  taxTotal: number;
+  deliveryFee: number;
+  grandTotal: number;
+  deliveryMode: string;
+  deliveryDate: string | null;
+  placedAt: string;
+  confirmedAt: string | null;
+  cancelledAt: string | null;
+  itemCount: number;
+  unitCount: number;
+  supplierCount: number;
+  fulfillmentStatuses: string[];
+}
+
+export interface OrderItem {
+  id: string;
+  productId: string;
+  supplierProductId: string;
+  supplierId: string;
+  supplierName: string | null;
+  productName: string;
+  manufacturerName: string | null;
+  composition: string | null;
+  packSize: string | null;
+  unitPrice: number;
+  mrpReference: number | null;
+  taxRate: number | null;
+  quantity: number;
+  discountAmount: number;
+  taxAmount: number;
+  lineTotal: number;
+  status: string;
+}
+
+export interface OrderFulfillment {
+  id: string;
+  fulfillmentReference: string;
+  supplierId: string;
+  supplierName: string | null;
+  status: string;
+  subtotal: number;
+  taxTotal: number;
+  deliveryAllocation: number;
+  total: number;
+  packageCount: number;
+  itemCount: number;
+  unitCount: number;
+  acceptedAt: string | null;
+  packedAt: string | null;
+  readyAt: string | null;
+  collectedAt: string | null;
+  deliveredAt: string | null;
+  cancelledAt: string | null;
+}
+
+export interface OrderPayment {
+  id: string;
+  gateway: string;
+  status: string;
+  amount: number;
+  currency: string;
+  method: string;
+  providerReference: string | null;
+  providerOrderReference: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  paidAt: string | null;
+  refundedAmount: number;
+  providerPayload?: Record<string, unknown> | null;
+  failure?: { code: string; message: string } | null;
+}
+
+export interface OrderTimelineEntry {
+  fromStatus: string | null;
+  toStatus: string;
+  reason: string | null;
+  actorType: string;
+  createdAt: string;
+}
+
+export interface OrderAddressSnapshot {
+  id?: string;
+  label?: string | null;
+  contactName?: string;
+  contactPhone?: string;
+  addressLine1?: string;
+  addressLine2?: string | null;
+  landmark?: string | null;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  capturedAt?: string;
+}
+
+export interface OrderDetail {
+  id: string;
+  orderNumber: string;
+  status: string;
+  paymentStatus: string;
+  currency: string;
+  subtotal: number;
+  discountTotal: number;
+  taxTotal: number;
+  deliveryFee: number;
+  grandTotal: number;
+  deliveryMode: string;
+  deliveryDate: string | null;
+  shippingAddress: OrderAddressSnapshot;
+  buyerNote: string | null;
+  placedAt: string | null;
+  confirmedAt: string | null;
+  cancelledAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  checkoutSessionId: string | null;
+  itemCount: number;
+  supplierCount: number;
+  items: OrderItem[];
+  fulfillments: OrderFulfillment[];
+  payment: OrderPayment | null;
+  activeReservations: number;
+  reservationCount: number;
+  timeline: OrderTimelineEntry[];
+  cancellation?: { orderNumber: string; releasedLines: number; releasedUnits: number };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Payments (Phase 6)
+ *
+ * The buyer sees a payment; an operator sees the whole trail behind it — attempts, refunds and the
+ * webhook evidence log. `refundableAmount` is computed by the API (captured minus already refunded) so
+ * the screen never does money arithmetic of its own.
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface OrderRefund {
+  id: string;
+  amount: number;
+  status: string;
+  reason: string | null;
+  gatewayRefundReference: string | null;
+  processedAt: string | null;
+  createdAt: string;
+}
+
+export interface PaymentRetryIntent {
+  paymentId: string;
+  orderId: string;
+  orderNumber: string;
+  status: string;
+  amount: number;
+  currency: string;
+  method: string;
+  gateway: string;
+  attemptNumber: number;
+  providerReference: string | null;
+  /** What the gateway hands to its own client SDK; empty for the mock provider. */
+  providerPayload: Record<string, unknown> | null;
+}
+
+export interface PaymentRefundResult {
+  refundId: string;
+  paymentId: string;
+  orderId: string;
+  orderNumber: string;
+  amount: number;
+  currency: string;
+  status: string;
+  providerRefundReference: string | null;
+  message: string;
+}
+
+/** What `POST /dev/payments/:id/mock-webhook` answers: the production webhook outcome, echoed back. */
+export interface MockWebhookOutcome {
+  status: 'PROCESSED' | 'DUPLICATE' | 'IGNORED' | 'REJECTED' | 'UNMATCHED';
+  eventId: string;
+  eventType: string;
+  paymentId: string | null;
+  applied: boolean;
+  simulatedOutcome?: string;
+  paymentStatus?: string;
+}
+
+export interface AdminPaymentRow {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
+  buyerId: string;
+  buyerName: string | null;
+  gateway: string;
+  providerReference: string | null;
+  method: string;
+  status: string;
+  amount: number;
+  refundedAmount: number;
+  refundableAmount: number;
+  currency: string;
+  failureCode: string | null;
+  failureMessage: string | null;
+  lastReconciledAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminPaymentList {
+  payments: AdminPaymentRow[];
+  pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };
+}
+
+export interface PaymentAttempt {
+  id: string;
+  attemptNumber: number;
+  gateway: string;
+  status: string;
+  amount: number;
+  providerReference: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentRefundRecord {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  reason: string | null;
+  gatewayRefundReference: string | null;
+  requestedBy: string | null;
+  failureReason: string | null;
+  processedAt: string | null;
+  createdAt: string;
+}
+
+export interface PaymentWebhookEvent {
+  id: string;
+  externalEventId: string;
+  eventType: string;
+  signatureValid: boolean;
+  processingStatus: string;
+  processingAttempts: number;
+  processingError: string | null;
+  receivedAt: string;
+  processedAt: string | null;
+}
+
+export interface AdminPaymentDetail {
+  payment: AdminPaymentRow & { updatedAt: string };
+  attempts: PaymentAttempt[];
+  refunds: PaymentRefundRecord[];
+  webhookEvents: PaymentWebhookEvent[];
+}

@@ -2,7 +2,7 @@
   "name": "@bezzo/api",
   "version": "1.0.0",
   "private": true,
-  "description": "BEZZO API — modular NestJS backend for the B2B pharmaceutical marketplace",
+  "description": "BEZZO API \u2014 modular NestJS backend for the B2B pharmaceutical marketplace",
   "main": "./dist/main.js",
   "scripts": {
     "build": "nest build",
@@ -15,7 +15,6 @@
     "test:integration": "jest --config jest-integration.config.js --runInBand",
     "test:concurrency": "jest --config jest-integration.config.js --runInBand --testPathPattern=concurrency",
     "openapi:export": "node ./scripts/export-openapi.js",
-    "seed:scenario": "node ./scripts/seed-scenario.js",
     "clean": "rm -rf dist"
   },
   "dependencies": {

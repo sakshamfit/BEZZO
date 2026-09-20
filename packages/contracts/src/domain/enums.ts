@@ -23,6 +23,32 @@ export const UserStatus = {
 export type UserStatus = (typeof UserStatus)[keyof typeof UserStatus];
 
 /** Bezzo_api_implementation_endpoint_by_endpoint_engineering_spec_v1.0.md §6 (superset — ADR-0003). */
+/**
+ * Partner applications — the public "apply to sell / apply to pick / apply to buy" intake.
+ *
+ * Every submission is stored with a human-readable reference and is deliberately routed to the
+ * operations WhatsApp line so a real person can follow up: the platform never pretends an automated
+ * approval happened when a human review is required (compliance spec §3 — supplier and retailer
+ * verification is a human gate).
+ */
+export const PartnerApplicationType = {
+  SUPPLIER: 'SUPPLIER',
+  PICKER: 'PICKER',
+  RETAILER: 'RETAILER',
+  PARTNER: 'PARTNER',
+} as const;
+export type PartnerApplicationType = (typeof PartnerApplicationType)[keyof typeof PartnerApplicationType];
+
+export const PartnerApplicationStatus = {
+  NEW: 'NEW',
+  CONTACTED: 'CONTACTED',
+  IN_REVIEW: 'IN_REVIEW',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  DUPLICATE: 'DUPLICATE',
+} as const;
+export type PartnerApplicationStatus = (typeof PartnerApplicationStatus)[keyof typeof PartnerApplicationStatus];
+
 export const RoleCode = {
   BUYER: 'BUYER',
   BUYER_OWNER: 'BUYER_OWNER',
@@ -91,6 +117,8 @@ export const Permission = {
   ADMIN_DISPUTE_RESOLVE: 'admin.dispute.resolve',
   ADMIN_SETTLEMENT_APPROVE: 'admin.settlement.approve',
   ADMIN_AUDIT_READ: 'admin.audit.read',
+  ADMIN_APPLICATION_READ: 'admin.application.read',
+  ADMIN_APPLICATION_WRITE: 'admin.application.write',
   ADMIN_CONFIG_WRITE: 'admin.config.write',
   ADMIN_ANALYTICS_READ: 'admin.analytics.read',
 } as const;
@@ -303,6 +331,22 @@ export const FulfillmentStatus = {
   RETURNED: 'RETURNED',
 } as const;
 export type FulfillmentStatus = (typeof FulfillmentStatus)[keyof typeof FulfillmentStatus];
+
+/**
+ * Per-line picking state inside a fulfillment — `fulfillment_items.status` in the physical model.
+ * It is deliberately a smaller vocabulary than `FulfillmentStatus`: a line is pending until the
+ * supplier allocates it, then packed, collected, delivered — or short-picked when the shelf is empty.
+ */
+export const FulfillmentItemStatus = {
+  PENDING: 'PENDING',
+  ALLOCATED: 'ALLOCATED',
+  PACKED: 'PACKED',
+  COLLECTED: 'COLLECTED',
+  DELIVERED: 'DELIVERED',
+  SHORT_PICKED: 'SHORT_PICKED',
+  CANCELLED: 'CANCELLED',
+} as const;
+export type FulfillmentItemStatus = (typeof FulfillmentItemStatus)[keyof typeof FulfillmentItemStatus];
 
 /* ------------------------------------------------------------------------------------------------
  * Payments — state machine spec §19, payment/billing spec

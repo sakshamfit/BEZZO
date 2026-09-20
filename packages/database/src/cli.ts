@@ -12,6 +12,7 @@
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadEnvFile } from '@bezzo/config';
 import { Database } from './pool';
 import { createMigrationFile, getStatus, migrateSafely, migrationsDirectory } from './migrator';
 import { runSeeds, type SeedEnvironment } from './seeds/runner';
@@ -80,10 +81,23 @@ const HELP = `BEZZO database CLI
 `;
 
 export async function runCli(argv: string[]): Promise<void> {
+  /**
+   * Load the repository `.env` first (process variables still win). Without this the documented
+   * `corepack pnpm db:migrate` flow fails with "DATABASE_URL is required" even though `.env` exists,
+   * because each workspace package is executed with its own working directory.
+   */
+  const loaded = loadEnvFile({ silent: true });
   const { command, flags } = parseArgs(argv);
   if (command === 'help' || flags.help) {
     console.log(HELP);
     return;
+  }
+  // Being explicit about where configuration came from avoids the classic "which .env is this?" hunt.
+  if (flags.verbose === true) {
+    console.log(loaded.path ? `Environment: ${loaded.path}` : 'Environment: process variables only (.env not found)');
+  }
+  if (loaded.errors.length > 0) {
+    console.warn(`Ignored ${loaded.errors.length} malformed line(s) in ${loaded.path ?? '.env'}`);
   }
 
   const db = createDb();

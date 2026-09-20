@@ -83,6 +83,17 @@ function parseEnvelope<T>(status: number, payload: unknown): T {
   throw new ApiError('UNEXPECTED_RESPONSE', `The API returned an unexpected response (HTTP ${status})`, status);
 }
 
+export interface ApiRequestOptions {
+  method?: string;
+  body?: unknown;
+  token?: string | null;
+  signal?: AbortSignal;
+  /** Extra headers, merged last so a caller can override anything (e.g. `idempotency-key`). */
+  headers?: Record<string, string>;
+  /** Reused verbatim across a retry so the operation can never execute twice. */
+  idempotencyKey?: string;
+}
+
 /** Methods the API treats as state-changing; every one of them carries an `Idempotency-Key`. */
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -109,8 +120,45 @@ export function newIdempotencyKey(): string {
  */
 export async function apiRequest<T>(
   path: string,
-  options: { method?: string; body?: unknown; token?: string | null; signal?: AbortSignal; headers?: Record<string, string>; idempotencyKey?: string } = {},
+  options: ApiRequestOptions = {},
 ): Promise<T> {
+  const { status, payload } = await performRequest(path, options);
+  return parseEnvelope<T>(status, payload);
+}
+
+/**
+ * Same transport as `apiRequest`, but keeps the platform `meta`.
+ *
+ * List screens need `meta.pagination`, and dropping it would force them to re-implement the client
+ * (and lose the auth/refresh handling), so the envelope is exposed instead of a second fetch path.
+ */
+export async function apiRequestEnvelope<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<SuccessEnvelope<T>> {
+  const { status, payload } = await performRequest(path, options);
+  if (payload && typeof payload === 'object' && 'success' in payload) {
+    const envelope = payload as SuccessEnvelope<T> | ErrorEnvelope;
+    if (envelope.success) return envelope;
+    throw new ApiError(
+      envelope.error.code,
+      envelope.error.message,
+      status,
+      envelope.error.details ?? null,
+      envelope.error.fieldErrors ?? null,
+    );
+  }
+  throw new ApiError('UNEXPECTED_RESPONSE', `The API returned an unexpected response (HTTP ${status})`, status);
+}
+
+/**
+ * One HTTP round trip. Nothing here interprets the payload: the two public helpers above decide
+ * whether the caller wants domain data only or the envelope that carries pagination.
+ */
+async function performRequest(
+  path: string,
+  options: ApiRequestOptions,
+): Promise<{ status: number; payload: unknown }> {
   const url = path.startsWith('http') ? path : `${API_BROWSER_BASE}${path.startsWith('/') ? path : `/${path}`}`;
   const method = (options.method ?? 'GET').toUpperCase();
   const idempotencyKey =
@@ -142,7 +190,7 @@ export async function apiRequest<T>(
 
   const text = await response.text();
   const payload = text ? (JSON.parse(text) as unknown) : null;
-  return parseEnvelope<T>(response.status, payload);
+  return { status: response.status, payload };
 }
 
 /**

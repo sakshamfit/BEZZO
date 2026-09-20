@@ -6,7 +6,7 @@
  * (project rule §24, §37).
  */
 import { Injectable, type ArgumentMetadata, type PipeTransform } from '@nestjs/common';
-import { ZodError, type ZodSchema } from 'zod';
+import { ZodError, z, type ZodSchema } from 'zod';
 import { ErrorCode, type FieldError } from '@bezzo/contracts';
 import { DomainError } from '../errors/domain-error';
 
@@ -37,6 +37,34 @@ export class ZodValidationPipe implements PipeTransform {
 
 /** Factory used by controllers: `@Body(validate(createOrderSchema)) payload: CreateOrderInput`. */
 export const validate = (schema: ZodSchema) => new ZodValidationPipe(schema);
+
+/**
+ * Path parameters that name a row.
+ *
+ * A malformed identifier must be rejected before it reaches SQL: passing `not-a-uuid` to a `uuid`
+ * column raises a Postgres cast error, which would surface as an opaque 500. This pipe turns it into a
+ * precise 422 naming the offending parameter.
+ */
+@Injectable()
+export class UuidParamPipe implements PipeTransform {
+  constructor(private readonly field: string) {}
+
+  transform(value: unknown, _metadata: ArgumentMetadata): string {
+    const result = z.string().uuid().safeParse(value);
+    if (!result.success) {
+      throw new DomainError(ErrorCode.VALIDATION_FAILED, 'Request validation failed', {
+        httpStatus: 422,
+        fieldErrors: [
+          { field: this.field, code: ErrorCode.VALIDATION_FAILED, message: `${this.field} must be a UUID` },
+        ],
+      });
+    }
+    return result.data;
+  }
+}
+
+/** Factory used by controllers: `@Param('orderId', uuidParam('orderId')) orderId: string`. */
+export const uuidParam = (field: string) => new UuidParamPipe(field);
 
 /** Fastify gives query/params as unknown objects; parse with explicit schema + coercion. */
 export function parseWithSchema<T>(schema: ZodSchema<T>, value: unknown): T {

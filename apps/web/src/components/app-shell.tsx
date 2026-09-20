@@ -20,15 +20,37 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/catalog', label: 'Catalogue', visible: () => true },
+  // Public partner intake: the apply form routes every submission to the operations WhatsApp line.
+  { href: '/apply', label: 'Apply to partner', visible: () => true },
   {
     href: '/cart',
     label: 'Cart',
     visible: ({ signedIn, hasRole }) => signedIn && hasRole('BUYER', 'BUYER_OWNER', 'BUYER_STAFF'),
   },
   {
+    href: '/orders',
+    label: 'Orders',
+    visible: ({ signedIn, hasRole }) => signedIn && hasRole('BUYER', 'BUYER_OWNER', 'BUYER_STAFF'),
+  },
+  {
     href: '/supplier',
     label: 'Supplier workspace',
-    visible: ({ signedIn, hasRole }) => signedIn && hasRole('SUPPLIER', 'SUPPLIER_OWNER', 'SUPPLIER_STAFF'),
+    visible: ({ signedIn, hasRole }) =>
+      signedIn && hasRole('SUPPLIER', 'SUPPLIER_OWNER', 'SUPPLIER_INVENTORY', 'SUPPLIER_FINANCE'),
+  },
+  {
+    href: '/admin/applications',
+    label: 'Applications',
+    visible: ({ signedIn, hasRole }) =>
+      signedIn &&
+      hasRole('ADMIN', 'SUPER_ADMIN', 'OPERATIONS_AGENT', 'SUPPORT_AGENT'),
+  },
+  {
+    href: '/admin/payments',
+    label: 'Payments',
+    visible: ({ signedIn, hasRole }) =>
+      signedIn &&
+      hasRole('ADMIN', 'SUPER_ADMIN', 'OPERATIONS_AGENT', 'SUPPORT_AGENT', 'FINANCE_AGENT', 'COMPLIANCE_AGENT'),
   },
   {
     href: '/account',
@@ -53,8 +75,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   // A signed-out user on a private route is redirected exactly once, after the session was restored.
   useEffect(() => {
     if (!ready) return;
-    const isPrivate = ['/cart', '/account', '/notifications', '/dashboard', '/supplier'].some((prefix) =>
-      pathname.startsWith(prefix),
+    const isPrivate = ['/cart', '/checkout', '/orders', '/account', '/notifications', '/supplier', '/admin'].some(
+      (prefix) => pathname.startsWith(prefix),
     );
     if (isPrivate && !signedIn) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
@@ -65,8 +87,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="shell">
       <header className="topbar">
         <div className="container topbar-inner">
-          <Link href="/" className="brand">
-            BEZZO <span>B2B pharma marketplace</span>
+          <Link href="/" className="brand" aria-label="BEZZO home">
+            BEZZO <span>Healthcare. Simplified.</span>
           </Link>
           <nav className="nav" aria-label="Primary">
             {NAV_ITEMS.filter((item) => item.visible({ signedIn, hasRole })).map((item) => (
@@ -107,7 +129,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="container">
           <span>
             BEZZO · verified wholesalers to verified pharmacies · pickup, hub receiving and delivery are
-            tracked as separate stages.
+            tracked as separate stages. Partner enquiries: <Link className="link" href="/apply">apply here</Link>.
           </span>
           <span>
             {principal ? `${principal.displayName} · ${principal.roles.map(humanise).join(', ')}` : 'Not signed in'}
