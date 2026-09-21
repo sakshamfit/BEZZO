@@ -187,8 +187,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="mk-actions" style={{ order: 6 }}>
-            <Link href={cartHref} className="cart-btn" aria-label={`Cart${unitCount > 0 ? ` — ${unitCount} units` : ''}`}>
-              <CartIcon size={23} />
+            <Link
+              href={cartHref}
+              className={`cart-btn${isBuyer && unitCount > 0 ? '' : ' empty'}`}
+              aria-label={`Cart${unitCount > 0 ? ` — ${unitCount} units` : ''}`}
+            >
+              <CartIcon size={20} />
+              <span className="cb-label">Cart</span>
               {isBuyer && unitCount > 0 && (
                 <span className={`count on${bump ? ' bump' : ''}`}>
                   {unitCount > 99 ? '99+' : unitCount}

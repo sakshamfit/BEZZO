@@ -290,23 +290,25 @@ export default function CartPage() {
         </div>
 
         <aside className="stack tight">
-          <div className="card tight">
-            <h2 style={{ fontSize: '1rem', margin: '0 0 var(--space-3)' }}>Order summary</h2>
-            <div className="cart-total-row">
-              <span className="muted">Subtotal ({cart?.unitCount} units)</span>
-              <span>{formatMoney(cart?.estimatedSubtotal ?? 0, cart?.currency)}</span>
-            </div>
-            <div className="cart-total-row">
-              <span className="muted">Estimated GST</span>
-              <span>{formatMoney(cart?.estimatedTax ?? 0, cart?.currency)}</span>
-            </div>
-            <div className="cart-total-row">
-              <span className="muted">Delivery</span>
-              <span className="muted small">Priced at checkout</span>
-            </div>
-            <div className="cart-total-row total">
-              <span>Estimated total</span>
-              <span>{formatMoney(cart?.estimatedTotal ?? 0, cart?.currency)}</span>
+          <div className="card tight bill-card">
+            <h2 style={{ fontSize: '1rem', margin: '0 0 var(--space-3)' }}>Bill details</h2>
+            <div className="bill-rows">
+              <div className="cart-total-row">
+                <span className="muted">Subtotal ({cart?.unitCount} units)</span>
+                <span>{formatMoney(cart?.estimatedSubtotal ?? 0, cart?.currency)}</span>
+              </div>
+              <div className="cart-total-row">
+                <span className="muted">Estimated GST</span>
+                <span>{formatMoney(cart?.estimatedTax ?? 0, cart?.currency)}</span>
+              </div>
+              <div className="cart-total-row">
+                <span className="muted">Delivery</span>
+                <span className="muted small">Priced at checkout</span>
+              </div>
+              <div className="cart-total-row total">
+                <span>Estimated total</span>
+                <span>{formatMoney(cart?.estimatedTotal ?? 0, cart?.currency)}</span>
+              </div>
             </div>
             <Link
               className="btn accent block"

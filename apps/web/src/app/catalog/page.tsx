@@ -89,19 +89,61 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
         </p>
       </header>
 
-      <CatalogToolbar
-        categories={categories.map((category) => ({
-          id: category.id,
-          name: category.name,
-          productCount: category.productCount ?? 0,
-        }))}
-        state={{
-          q: query,
-          categoryId: params.categoryId ?? '',
-          sort,
-          inStockOnly,
-        }}
-      />
+      <div className="catalog-layout">
+        {/* Desktop filter rail. Same URL state the mobile toolbar drives — this
+            is pure navigation, the server stays the source of truth. */}
+        <aside className="cat-side" aria-label="Filter by category">
+          <div className="cs-head">Categories</div>
+          <ul>
+            <li>
+              <Link
+                href={`/catalog?${new URLSearchParams({
+                  ...(query ? { q: query } : {}),
+                  ...(sort !== 'relevance' ? { sort } : {}),
+                  ...(inStockOnly ? { inStockOnly: 'true' } : {}),
+                  page: '1',
+                }).toString()}`}
+                className={!params.categoryId ? 'active' : undefined}
+              >
+                All products
+              </Link>
+            </li>
+            {categories.map((category) => (
+              <li key={category.id}>
+                <Link
+                  href={`/catalog?${new URLSearchParams({
+                    ...(query ? { q: query } : {}),
+                    ...(sort !== 'relevance' ? { sort } : {}),
+                    ...(inStockOnly ? { inStockOnly: 'true' } : {}),
+                    categoryId: category.id,
+                    page: '1',
+                  }).toString()}`}
+                  className={params.categoryId === category.id ? 'active' : undefined}
+                >
+                  <span>{category.name}</span>
+                  {typeof category.productCount === 'number' && (
+                    <span className="cs-count">{formatNumber(category.productCount)}</span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </aside>
+
+        <div>
+          <CatalogToolbar
+            categories={categories.map((category) => ({
+              id: category.id,
+              name: category.name,
+              productCount: category.productCount ?? 0,
+            }))}
+            state={{
+              q: query,
+              categoryId: params.categoryId ?? '',
+              sort,
+              inStockOnly,
+            }}
+          />
 
       {!catalogEnvelope && (
         <div className="empty-card">
@@ -175,6 +217,8 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
           )}
         </>
       )}
+        </div>
+      </div>
     </div>
   );
 }

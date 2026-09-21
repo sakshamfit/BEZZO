@@ -79,24 +79,26 @@ export function ProductCard({ product, href }: { product: ProductSummary; href?:
       </div>
 
       <div className="pcard-foot">
-        <div className="pcard-price">
-          <span className="now">{product.minPrice !== null ? formatMoney(product.minPrice) : '—'}</span>
-          {product.maxPrice !== null && product.maxPrice !== product.minPrice ? (
-            <span className="mrp" title="Highest supplier price">
-              to {formatMoney(product.maxPrice)}
-            </span>
-          ) : null}
-        </div>
+        <div className="pcard-pricecol">
+          <div className="pcard-price">
+            <span className="now">{product.minPrice !== null ? formatMoney(product.minPrice) : '—'}</span>
+            {product.maxPrice !== null && product.maxPrice !== product.minPrice ? (
+              <span className="mrp" title="Highest supplier price">
+                to {formatMoney(product.maxPrice)}
+              </span>
+            ) : null}
+          </div>
 
-        <div className="pcard-suppliers">
-          {product.supplierCount > 0 ? (
-            <>
-              <VerifiedIcon size={12} />
-              {product.supplierCount} verified supplier{product.supplierCount === 1 ? '' : 's'}
-            </>
-          ) : (
-            <>&nbsp;</>
-          )}
+          <div className="pcard-suppliers">
+            {product.supplierCount > 0 ? (
+              <>
+                <VerifiedIcon size={12} />
+                {product.supplierCount} verified supplier{product.supplierCount === 1 ? '' : 's'}
+              </>
+            ) : (
+              <>&nbsp;</>
+            )}
+          </div>
         </div>
 
         {showStepper ? (
@@ -127,7 +129,7 @@ export function ProductCard({ product, href }: { product: ProductSummary; href?:
             onPointerDown={() => prefetchProductDetail(product.id)}
             onFocus={() => prefetchProductDetail(product.id)}
             onClick={() => void addBestOffer(product.id)}
-            title={product.inStock ? 'Add the best available supplier offer' : 'No supplier currently stocks this'}
+            title={product.inStock ? 'Add the best available supplier offer' : 'Out of stock — no supplier currently stocks this'}
           >
             {product.inStock ? (
               <>
@@ -199,11 +201,13 @@ export function ReorderCard({
         {packSize ?? '—'} · {supplierName}
       </div>
       <div className="pcard-foot">
-        <div className="pcard-price">
-          <span className="now">{formatMoney(unitPrice)}</span>
-        </div>
-        <div className="pcard-suppliers">
-          <BoltIcon size={12} /> bought {quantity}
+        <div className="pcard-pricecol">
+          <div className="pcard-price">
+            <span className="now">{formatMoney(unitPrice)}</span>
+          </div>
+          <div className="pcard-suppliers">
+            <BoltIcon size={12} /> bought {quantity}
+          </div>
         </div>
         {showStepper ? (
           <QuantityStepper

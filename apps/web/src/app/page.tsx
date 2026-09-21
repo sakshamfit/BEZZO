@@ -42,6 +42,45 @@ export default async function HomePage() {
     <div className="container container-narrow" style={{ paddingTop: 'var(--space-md)' }}>
       <HomeIntro />
 
+      {/* Storefront banner strip — platform facts (slots, invoices, verification),
+          not promotions: there is no discount engine to draw from, so nothing
+          here invents one. */}
+      <div className="promo-rail" aria-label="Platform highlights">
+        <Link href="/catalog" className="promo-banner pb-teal">
+          <span className="pb-kicker">Delivery</span>
+          <span className="pb-title">Quick or scheduled — you choose the slot</span>
+          <span className="pb-sub">
+            Slot capacity is checked live while you check out, and each supplier keeps its own
+            pickup window.
+          </span>
+          <span className="pb-icon" aria-hidden="true">
+            <TruckIcon size={56} />
+          </span>
+        </Link>
+        <Link href="/orders" className="promo-banner pb-navy">
+          <span className="pb-kicker">Invoicing</span>
+          <span className="pb-title">GST invoices, batch and expiry on every line</span>
+          <span className="pb-sub">
+            Every fulfilment is invoiced by the supplying wholesaler — the paper trail matches the
+            goods that arrive.
+          </span>
+          <span className="pb-icon" aria-hidden="true">
+            <HubIcon size={56} />
+          </span>
+        </Link>
+        <Link href="/apply" className="promo-banner pb-slate">
+          <span className="pb-kicker">Verification</span>
+          <span className="pb-title">Only licence-verified wholesalers sell here</span>
+          <span className="pb-sub">
+            Suppliers pass drug-licence checks before a single unit becomes sellable, and only
+            verified medical stores can order.
+          </span>
+          <span className="pb-icon" aria-hidden="true">
+            <ShieldIcon size={56} />
+          </span>
+        </Link>
+      </div>
+
       {!apiReachable && (
         <div className="alert error" role="alert" style={{ marginBottom: 'var(--space-md)' }}>
           The catalogue could not be loaded just now. Check the{' '}

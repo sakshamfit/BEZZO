@@ -48,7 +48,7 @@ export function CatalogToolbar({
 
   return (
     <div className="catalog-toolbar" role="search" aria-label="Catalogue filters">
-      <div className="field" style={{ flex: '1 1 190px' }}>
+      <div className="field ct-cat-field" style={{ flex: '1 1 190px' }}>
         <label htmlFor="ct-category" className="sr-only">
           Filter by category
         </label>

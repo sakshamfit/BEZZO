@@ -305,3 +305,13 @@ fresh session must know:
 - Mock state is in-memory: dev-server restart resets fixtures (useful after demo mutations).
 - Verified: typecheck green, 24 routes 200 on `next dev`, cart/quote/search flows exercised through
   the app's own route handlers.
+- **Storefront v3 (2026-09-21, Blinkit-pattern)**: search = full-round grey pill (focus → white +
+  teal ring); header cart = teal pill with count chip (outline when empty); category tiles =
+  circles (`.ct-visual` clipped 50%); home promo-rail of 3 honest USP banners; product-card foot =
+  price column + compact ADD pill that wraps on narrow cards; catalog desktop sidebar
+  (`.catalog-layout`/`.cat-side`, toolbar's category select hidden ≥900px via `.ct-cat-field`);
+  cart "Bill details" card (`.bill-card`, dashed rows); bottom-nav active = teal pill. **No
+  strikethrough MRP / discount chips on summary cards — the real `/catalog/products` API has no
+  MRP field, so none is invented** (MRP appears per-offer on product detail where the API has it).
+  Sandbox restarts wipe node_modules + kill the dev server: re-run `npm install`, restart preview.
+
