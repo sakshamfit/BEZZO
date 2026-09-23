@@ -21,6 +21,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
+import { useCart } from '../../components/cart-context';
 import { formatMoney, humanise, statusTone } from '../../lib/format';
 import type { BuyerAddress, CheckoutQuote, DeliverySlot, OrderDetail } from '../../lib/types';
 
@@ -50,6 +51,7 @@ function addDays(isoDate: string, days: number): string {
 export default function CheckoutPage() {
   const router = useRouter();
   const { ready, principal, request, requestEnvelope } = useAuth();
+  const { refresh: refreshCart } = useCart();
   const [addresses, setAddresses] = useState<BuyerAddress[]>([]);
   const [slots, setSlots] = useState<DeliverySlot[]>([]);
   const [addressId, setAddressId] = useState('');
@@ -126,6 +128,8 @@ export default function CheckoutPage() {
         method: 'POST',
         body: { ...deliveryBody, paymentMethod, buyerNote: buyerNote.trim() || undefined },
       });
+      // The order consumed the basket server-side; re-sync the badge before leaving.
+      void refreshCart();
       router.push(`/orders/${order.id}?placed=1`);
     } catch (caught) {
       if (caught instanceof ApiError) {
@@ -146,43 +150,62 @@ export default function CheckoutPage() {
     }
   }
 
-  if (!ready || loading) return <p className="muted">Preparing checkout…</p>;
+  if (!ready || loading) {
+    return (
+      <div className="container container-narrow" aria-busy="true">
+        <div className="skeleton" style={{ height: 28, width: 220, marginBottom: 16 }} />
+        <div className="skeleton" style={{ height: 170, borderRadius: 'var(--radius-lg)', marginBottom: 12 }} />
+        <div className="skeleton" style={{ height: 170, borderRadius: 'var(--radius-lg)', marginBottom: 12 }} />
+        <div className="skeleton" style={{ height: 170, borderRadius: 'var(--radius-lg)' }} />
+      </div>
+    );
+  }
 
   if (!principal) {
     return (
-      <section className="stack">
-        <h1>Checkout</h1>
-        <p className="muted">Sign in with your retailer account to place an order.</p>
-        <Link className="btn primary" href="/login?next=%2Fcheckout">
-          Sign in
-        </Link>
-      </section>
+      <div className="container">
+        <div className="empty-card" style={{ marginTop: 'var(--space-lg)' }}>
+          <span className="ec-title">Sign in to place an order</span>
+          <p className="ec-body">Sign in with your retailer account to continue to checkout.</p>
+          <div className="ec-actions">
+            <Link className="btn primary small" href="/login?next=%2Fcheckout">
+              Sign in
+            </Link>
+          </div>
+        </div>
+      </div>
     );
   }
 
   if (!isBuyer) {
     return (
-      <section className="stack">
-        <h1>Checkout</h1>
-        <p className="muted">Only retailer (medical store) accounts can place marketplace orders.</p>
-        <Link className="btn" href="/account">
-          Go to account
-        </Link>
-      </section>
+      <div className="container">
+        <div className="empty-card" style={{ marginTop: 'var(--space-lg)' }}>
+          <span className="ec-title">Only retailer accounts can place marketplace orders</span>
+          <p className="ec-body">Your account is signed in with a different role.</p>
+          <div className="ec-actions">
+            <Link className="btn small" href="/account">
+              Go to account
+            </Link>
+          </div>
+        </div>
+      </div>
     );
   }
 
   const blocked = quote !== null && !quote.placeable;
 
   return (
-    <section className="stack" style={{ gap: 'var(--space-5)' }}>
-      <header className="page-head">
+    <div className="container container-narrow page-footroom">
+      <header className="spread" style={{ marginBottom: 'var(--space-md)', alignItems: 'baseline' }}>
         <div>
-          <p className="eyebrow">Checkout</p>
-          <h1 style={{ marginBottom: 4 }}>Delivery and payment</h1>
-          <p className="muted small" style={{ margin: 0 }}>
-            Stock is reserved only when you place the order, and the price you are charged is the price the
-            server returns — never one sent by this screen.
+          <nav className="small muted" style={{ marginBottom: 4 }}>
+            <Link href="/cart">Cart</Link> · <span>Checkout</span>
+          </nav>
+          <h1 style={{ fontSize: '1.375rem', margin: 0 }}>Delivery and payment</h1>
+          <p className="small muted" style={{ margin: '4px 0 0' }}>
+            Stock is reserved only when you place the order, and the price you are charged is the price
+            the server returns — never one sent by this screen.
           </p>
         </div>
         <Link className="btn small" href="/cart">
@@ -191,21 +214,21 @@ export default function CheckoutPage() {
       </header>
 
       {error && (
-        <div className="alert error" role="alert">
+        <div className="alert error" role="alert" style={{ marginBottom: 'var(--space-md)' }}>
           {error}
         </div>
       )}
 
       {addresses.length === 0 && (
-        <div className="alert warn" role="status">
+        <div className="alert warn" role="status" style={{ marginBottom: 'var(--space-md)' }}>
           No delivery address is saved yet. Add one in your account, then come back to checkout.
         </div>
       )}
 
-      <div className="grid grid-sidebar">
+      <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1.6fr) minmax(300px, 1fr)', alignItems: 'start' }}>
         <div className="stack" style={{ gap: 'var(--space-4)' }}>
-          <div className="card">
-            <h2 className="card-title">1. Delivery address</h2>
+          <section className="card">
+            <StepHead step={1} title="Delivery address" hint="Where the hub should deliver" />
             <div className="choice-grid">
               {addresses.map((address) => (
                 <label className={`choice${addressId === address.id ? ' selected' : ''}`} key={address.id}>
@@ -235,14 +258,18 @@ export default function CheckoutPage() {
                 </label>
               ))}
             </div>
-            <p className="hint">
-              Delivering to a postal code a supplier has not declared serviceable is reported as an issue, never
-              silently dropped. Manage addresses under <Link className="link" href="/account">Account</Link>.
+            <p className="hint" style={{ marginBottom: 0 }}>
+              Delivering to a postal code a supplier has not declared serviceable is reported as an
+              issue, never silently dropped. Manage addresses under{' '}
+              <Link className="link" href="/account">
+                Account
+              </Link>
+              .
             </p>
-          </div>
+          </section>
 
-          <div className="card">
-            <h2 className="card-title">2. Delivery window</h2>
+          <section className="card">
+            <StepHead step={2} title="Delivery window" hint="Quick or scheduled — the choice stays visible" />
             <div className="choice-grid">
               <label className={`choice${deliveryMode === 'SCHEDULED' ? ' selected' : ''}`}>
                 <input
@@ -256,10 +283,12 @@ export default function CheckoutPage() {
                   }}
                 />
                 <span>
-                  <span className="title">Scheduled</span>
+                  <span className="title">
+                    <TruckIconInline /> Scheduled
+                  </span>
                   <span className="desc">
-                    Delivered on the date and slot you choose, after the wholesalers prepare and the hub receives the
-                    goods.
+                    Delivered on the date and slot you choose, after the wholesalers prepare and the hub
+                    receives the goods.
                   </span>
                 </span>
               </label>
@@ -275,10 +304,12 @@ export default function CheckoutPage() {
                   }}
                 />
                 <span>
-                  <span className="title">Instant</span>
+                  <span className="title">
+                    <BoltIconInline /> Instant
+                  </span>
                   <span className="desc">
-                    Expedited handling, dispatched within the hour. Availability depends on the suppliers that cover
-                    your postal code.
+                    Expedited handling, dispatched within the hour. Availability depends on the suppliers
+                    that cover your postal code.
                   </span>
                 </span>
               </label>
@@ -318,10 +349,10 @@ export default function CheckoutPage() {
                 </div>
               </div>
             )}
-          </div>
+          </section>
 
-          <div className="card">
-            <h2 className="card-title">3. Payment method</h2>
+          <section className="card">
+            <StepHead step={3} title="Payment" hint="Online payments are authorised by the gateway after the order commits" />
             <div className="choice-grid">
               {PAYMENT_METHODS.map((method) => (
                 <label className={`choice${paymentMethod === method.value ? ' selected' : ''}`} key={method.value}>
@@ -350,25 +381,26 @@ export default function CheckoutPage() {
                 onChange={(event) => setBuyerNote(event.target.value)}
               />
             </div>
-            <p className="hint">
-              Online payments are authorised by the gateway after the order is committed. If the gateway cannot be
-              reached the order still exists and the payment is marked failed, so you can retry paying instead of
-              re-ordering.
+            <p className="hint" style={{ marginBottom: 0 }}>
+              If the gateway cannot be reached the order still exists and the payment is marked failed,
+              so you can retry paying instead of re-ordering.
             </p>
-          </div>
+          </section>
         </div>
 
-        <aside className="card stack" style={{ gap: 'var(--space-3)', alignSelf: 'start' }}>
-          <h2 className="card-title">Order summary</h2>
+        <aside className="card tight" style={{ position: 'sticky', top: 84 }}>
+          <h2 style={{ fontSize: '1rem', margin: '0 0 var(--space-3)' }}>Order summary</h2>
 
           {!quote ? (
             <>
               <p className="muted small" style={{ margin: 0 }}>
-                Review the order to see the live price, the delivery fee and anything blocking checkout.
+                Review the order to see the live price, the delivery fee and anything blocking
+                checkout.
               </p>
               <button
                 type="button"
-                className="btn primary"
+                className="btn primary block"
+                style={{ marginTop: 'var(--space-3)' }}
                 disabled={quoting || !addressId}
                 onClick={() => void review()}
               >
@@ -377,33 +409,35 @@ export default function CheckoutPage() {
             </>
           ) : (
             <>
-              <div className="stack" style={{ gap: 6 }}>
-                <span className="row spread small">
+              <div className="stack tight">
+                <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
                   <span className="muted">Items</span>
                   <span className="mono">{quote.itemCount}</span>
                 </span>
-                <span className="row spread small">
+                <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
                   <span className="muted">Suppliers</span>
                   <span className="mono">{quote.supplierCount}</span>
                 </span>
-                <span className="row spread small">
+                <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
                   <span className="muted">Subtotal</span>
                   <span className="mono">{formatMoney(quote.subtotal, quote.currency)}</span>
                 </span>
-                <span className="row spread small">
+                <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
                   <span className="muted">Tax</span>
                   <span className="mono">{formatMoney(quote.taxTotal, quote.currency)}</span>
                 </span>
-                <span className="row spread small">
+                <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
                   <span className="muted">
                     Delivery {quote.deliveryMode === 'INSTANT' ? '(instant)' : '(scheduled)'}
                   </span>
                   <span className="mono">{formatMoney(quote.deliveryFee, quote.currency)}</span>
                 </span>
-                <div className="divider" />
-                <span className="row spread">
+                <div className="divider" style={{ margin: '6px 0' }} />
+                <span className="row spread" style={{ flexWrap: 'nowrap' }}>
                   <span className="label-md">Payable</span>
-                  <span className="price mono">{formatMoney(quote.grandTotal, quote.currency)}</span>
+                  <span className="price mono" style={{ fontWeight: 700, fontSize: '1.0625rem' }}>
+                    {formatMoney(quote.grandTotal, quote.currency)}
+                  </span>
                 </span>
               </div>
 
@@ -420,11 +454,13 @@ export default function CheckoutPage() {
 
               <button
                 type="button"
-                className="btn primary"
+                className="btn accent block"
                 disabled={placing || blocked}
                 onClick={() => void placeOrder()}
               >
-                {placing ? 'Placing order…' : `Place order · ${formatMoney(quote.grandTotal, quote.currency)}`}
+                {placing
+                  ? 'Placing order…'
+                  : `Place order · ${formatMoney(quote.grandTotal, quote.currency)}`}
               </button>
               <button type="button" className="btn link" disabled={quoting} onClick={() => void review()}>
                 {quoting ? 'Re-pricing…' : 'Re-price'}
@@ -435,7 +471,7 @@ export default function CheckoutPage() {
       </div>
 
       {quote && quote.lines.length > 0 && (
-        <div className="card">
+        <div className="card" style={{ marginTop: 'var(--space-4)' }}>
           <h2 className="card-title">Priced lines</h2>
           <div className="table-wrap">
             <table className="table">
@@ -467,19 +503,98 @@ export default function CheckoutPage() {
               </tbody>
             </table>
           </div>
-          <p className="hint">
-            Reserved stock is held for a limited window and released automatically if the order is cancelled or the
-            payment never completes — see <Link className="link" href="/status">platform status</Link> for the
-            reservation policy in this environment.
+          <p className="hint" style={{ marginBottom: 0 }}>
+            Reserved stock is held for a limited window and released automatically if the order is
+            cancelled or the payment never completes.
           </p>
         </div>
       )}
 
-      <div className="pill-row">
-        <span className={`chip ${statusTone(paymentMethod)}`}>{humanise(paymentMethod)}</span>
-        <span className="chip plain">{branchLabel(deliveryMode)}</span>
+      {/* Sticky mobile action bar — mirrors the aside's primary action */}
+      <div className="stickybar">
+        <div className="container stickybar-inner">
+          <div className="sb-info">
+            <span className="sb-title">
+              {quote ? formatMoney(quote.grandTotal, quote.currency) : 'Ready to price'}
+            </span>
+            <span className="sb-sub">
+              {quote
+                ? `${quote.itemCount} items · ${quote.supplierCount} supplier${quote.supplierCount === 1 ? '' : 's'}`
+                : 'Review for the live price'}
+            </span>
+          </div>
+          {quote ? (
+            <button
+              type="button"
+              className="btn accent"
+              disabled={placing || blocked}
+              onClick={() => void placeOrder()}
+            >
+              {placing ? 'Placing…' : 'Place order'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn primary"
+              disabled={quoting || !addressId}
+              onClick={() => void review()}
+            >
+              {quoting ? 'Pricing…' : 'Review order'}
+            </button>
+          )}
+        </div>
       </div>
-    </section>
+    </div>
+  );
+}
+
+function StepHead({ step, title, hint }: { step: number; title: string; hint: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 'var(--space-3)' }}>
+      <span
+        aria-hidden="true"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 26,
+          height: 26,
+          borderRadius: 'var(--radius-full)',
+          background: 'var(--primary)',
+          color: 'var(--on-primary)',
+          fontSize: '0.8125rem',
+          fontWeight: 800,
+          flex: '0 0 auto',
+        }}
+      >
+        {step}
+      </span>
+      <div>
+        <h2 style={{ fontSize: '1rem', margin: 0 }}>{title}</h2>
+        <p className="hint" style={{ margin: 0 }}>
+          {hint}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TruckIconInline() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ verticalAlign: '-2px', marginRight: 4 }}>
+      <path d="M2.5 6.5h11v10h-11z" />
+      <path d="M13.5 10h4l3 3v3.5h-7z" />
+      <circle cx="7" cy="18" r="1.8" />
+      <circle cx="17" cy="18" r="1.8" />
+    </svg>
+  );
+}
+
+function BoltIconInline() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ verticalAlign: '-2px', marginRight: 4 }}>
+      <path d="M13 2.5 5.5 13.5H11l-1 8L18.5 10H13z" />
+    </svg>
   );
 }
 

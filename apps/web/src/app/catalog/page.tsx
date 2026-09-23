@@ -1,31 +1,12 @@
 import Link from 'next/link';
 import { serverGet } from '../../lib/api';
-import { formatMoney, formatNumber, prescriptionLabel } from '../../lib/format';
-import type { Category, Paginated } from '../../lib/types';
-import { CatalogFilters } from './catalog-filters';
+import { formatNumber } from '../../lib/format';
+import type { Category, Paginated, ProductSummary } from '../../lib/types';
+import { ProductCard } from '../../components/product-card';
+import { CatalogToolbar } from './catalog-toolbar';
+import { ChevronLeft, ChevronRight, SearchIcon } from '../../components/icons';
 
 export const dynamic = 'force-dynamic';
-
-interface CatalogProduct {
-  id: string;
-  name: string;
-  genericName: string | null;
-  brandName: string | null;
-  manufacturerName: string | null;
-  dosageForm: string | null;
-  strength: string | null;
-  packSize: string | null;
-  prescriptionClassification: string;
-  supplierCount: number;
-  minPrice: number | null;
-  maxPrice: number | null;
-  sellableQuantity: number;
-  inStock: boolean;
-}
-
-interface CatalogResponse extends Paginated<CatalogProduct> {
-  meta?: { provider?: string; degraded?: boolean };
-}
 
 interface SearchParams {
   q?: string;
@@ -35,16 +16,25 @@ interface SearchParams {
   inStockOnly?: string;
 }
 
+/**
+ * Catalogue / search results — the marketplace's product surface.
+ *
+ * Results stay server-rendered from the platform search (OpenSearch, degraded
+ * DB fallback): prices and stock are re-read per request, the URL carries the
+ * whole query (shareable, back-button safe), and quick-add works from the card
+ * itself. The API never paginates more than asked; this page asks for 24.
+ */
 export default async function CatalogPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const page = Math.max(Number(params.page ?? 1) || 1, 1);
   const sort = params.sort ?? 'relevance';
   const inStockOnly = params.inStockOnly === 'true';
+  const query = (params.q ?? '').trim();
 
   const [catalogEnvelope, categoriesEnvelope] = await Promise.all([
-    serverGet<CatalogResponse>('/catalog/products', {
+    serverGet<Paginated<ProductSummary>>('/catalog/products', {
       query: {
-        q: params.q,
+        q: query || undefined,
         categoryId: params.categoryId,
         sort,
         page,
@@ -59,151 +49,176 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
   const categories = categoriesEnvelope?.data ?? [];
   const products = catalog?.items ?? [];
   const pagination = catalog?.pagination;
-  const degraded = catalog?.meta?.degraded ?? false;
-  const provider = catalog?.meta?.provider ?? (catalogEnvelope ? 'unknown' : 'unreachable');
+  const activeCategory = categories.find((category) => category.id === params.categoryId) ?? null;
 
   function pageHref(target: number): string {
-    const query = new URLSearchParams();
-    if (params.q) query.set('q', params.q);
-    if (params.categoryId) query.set('categoryId', params.categoryId);
-    if (sort !== 'relevance') query.set('sort', sort);
-    if (inStockOnly) query.set('inStockOnly', 'true');
-    query.set('page', String(target));
-    return `/catalog?${query.toString()}`;
+    const search = new URLSearchParams();
+    if (query) search.set('q', query);
+    if (params.categoryId) search.set('categoryId', params.categoryId);
+    if (sort !== 'relevance') search.set('sort', sort);
+    if (inStockOnly) search.set('inStockOnly', 'true');
+    search.set('page', String(target));
+    return `/catalog?${search.toString()}`;
   }
 
+  const title = query
+    ? `Results for “${query}”`
+    : activeCategory
+      ? activeCategory.name
+      : 'Catalogue';
+
   return (
-    <>
-      <div className="page-head">
+    <div className="container">
+      <header style={{ marginBottom: 'var(--space-md)' }}>
+        <nav className="small muted" style={{ marginBottom: 6 }} aria-label="Breadcrumb">
+          <Link href="/">Home</Link> · <Link href="/categories">Categories</Link> · <span>{title}</span>
+        </nav>
+        <div className="spread" style={{ alignItems: 'baseline' }}>
+          <h1 style={{ fontSize: '1.375rem', margin: 0 }}>{title}</h1>
+          {pagination && (
+            <span className="small muted">
+              {formatNumber(pagination.totalItems)} product{pagination.totalItems === 1 ? '' : 's'} ·{' '}
+              page {pagination.page} of {pagination.totalPages}
+            </span>
+          )}
+        </div>
+        <p className="small muted" style={{ margin: '4px 0 0' }}>
+          {query
+            ? 'Matched on medicine name, brand, generic and composition. Prices and stock are live.'
+            : 'Published products from verified wholesalers. Prices and stock are re-read on every request.'}
+        </p>
+      </header>
+
+      <div className="catalog-layout">
+        {/* Desktop filter rail. Same URL state the mobile toolbar drives — this
+            is pure navigation, the server stays the source of truth. */}
+        <aside className="cat-side" aria-label="Filter by category">
+          <div className="cs-head">Categories</div>
+          <ul>
+            <li>
+              <Link
+                href={`/catalog?${new URLSearchParams({
+                  ...(query ? { q: query } : {}),
+                  ...(sort !== 'relevance' ? { sort } : {}),
+                  ...(inStockOnly ? { inStockOnly: 'true' } : {}),
+                  page: '1',
+                }).toString()}`}
+                className={!params.categoryId ? 'active' : undefined}
+              >
+                All products
+              </Link>
+            </li>
+            {categories.map((category) => (
+              <li key={category.id}>
+                <Link
+                  href={`/catalog?${new URLSearchParams({
+                    ...(query ? { q: query } : {}),
+                    ...(sort !== 'relevance' ? { sort } : {}),
+                    ...(inStockOnly ? { inStockOnly: 'true' } : {}),
+                    categoryId: category.id,
+                    page: '1',
+                  }).toString()}`}
+                  className={params.categoryId === category.id ? 'active' : undefined}
+                >
+                  <span>{category.name}</span>
+                  {typeof category.productCount === 'number' && (
+                    <span className="cs-count">{formatNumber(category.productCount)}</span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </aside>
+
         <div>
-          <h1>Catalogue</h1>
-          <p>
-            Published products from verified wholesalers. Prices, stock and batch details are re-read on
-            every request — the catalogue never shows a cached price.
-          </p>
-        </div>
-        <div className="row">
-          <span className={`badge ${degraded ? 'warn' : 'ok'}`} title={`Search provider: ${provider}`}>
-            {degraded ? 'search: database fallback' : 'search: opensearch'}
+          <CatalogToolbar
+            categories={categories.map((category) => ({
+              id: category.id,
+              name: category.name,
+              productCount: category.productCount ?? 0,
+            }))}
+            state={{
+              q: query,
+              categoryId: params.categoryId ?? '',
+              sort,
+              inStockOnly,
+            }}
+          />
+
+      {!catalogEnvelope && (
+        <div className="empty-card">
+          <span className="ec-icon">
+            <SearchIcon size={24} />
           </span>
+          <span className="ec-title">The catalogue could not be loaded</span>
+          <p className="ec-body">
+            The API is unreachable from the web server right now. Check the platform status page and
+            try again — nothing is cached in your browser.
+          </p>
+          <div className="ec-actions">
+            <Link className="btn small" href="/status">
+              Platform status
+            </Link>
+            <Link className="btn primary small" href="/">
+              Back to home
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {catalogEnvelope && products.length === 0 && (
+        <div className="empty-card">
+          <span className="ec-icon">
+            <SearchIcon size={24} />
+          </span>
+          <span className="ec-title">
+            {query ? `No medicines found for “${query}”` : 'No products matched these filters'}
+          </span>
+          <p className="ec-body">
+            {query
+              ? 'Try a generic name (e.g. paracetamol), a brand, or a composition. Check the spelling, or clear the filters and browse by category.'
+              : 'Try clearing the in-stock filter or choosing a different category.'}
+          </p>
+          <div className="ec-actions">
+            <Link className="btn small" href="/catalog">
+              Clear filters
+            </Link>
+            <Link className="btn primary small" href="/categories">
+              Browse categories
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {products.length > 0 && (
+        <>
+          <div className="product-grid">
+            {products.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+
+          {pagination && pagination.totalPages > 1 && (
+            <nav className="row" aria-label="Pagination" style={{ marginTop: 'var(--space-lg)', justifyContent: 'center' }}>
+              {page > 1 && (
+                <Link className="btn small" href={pageHref(page - 1)} rel="prev">
+                  <ChevronLeft size={14} /> Previous
+                </Link>
+              )}
+              <span className="small muted nowrap">
+                Page {pagination.page} of {pagination.totalPages}
+              </span>
+              {page < pagination.totalPages && (
+                <Link className="btn small" href={pageHref(page + 1)} rel="next">
+                  Next <ChevronRight size={14} />
+                </Link>
+              )}
+            </nav>
+          )}
+        </>
+      )}
         </div>
       </div>
-
-      <div className="grid" style={{ gridTemplateColumns: 'minmax(240px, 280px) 1fr', alignItems: 'start' }}>
-        <CatalogFilters
-          categories={categories.map((category) => ({
-            id: category.id,
-            name: category.name,
-            productCount: category.productCount ?? 0,
-          }))}
-          initial={{
-            q: params.q ?? '',
-            categoryId: params.categoryId ?? '',
-            sort,
-            inStockOnly,
-          }}
-        />
-
-        <section className="stack">
-          {!catalogEnvelope && (
-            <div className="alert error">
-              The catalogue could not be loaded. The API is unreachable from the web server — check the
-              platform status page and try again.
-            </div>
-          )}
-
-          {catalogEnvelope && products.length === 0 && (
-            <div className="empty">
-              <p style={{ marginBottom: 'var(--space-2)' }}>
-                <strong>No products matched.</strong>
-              </p>
-              <p className="small muted" style={{ margin: 0 }}>
-                {params.q
-                  ? `Nothing published matches “${params.q}”. Try a generic name, a brand or a composition.`
-                  : 'The catalogue is empty. Products appear here once a Bezzo operator publishes them.'}
-              </p>
-            </div>
-          )}
-
-          {products.length > 0 && (
-            <>
-              <div className="spread">
-                <span className="small muted">
-                  {formatNumber(pagination?.totalItems ?? products.length)} product
-                  {(pagination?.totalItems ?? products.length) === 1 ? '' : 's'} · page {pagination?.page ?? page} of{' '}
-                  {pagination?.totalPages ?? 1}
-                </span>
-                <span className="small faint">Sorted by {sort.replace(/_/g, ' ')}</span>
-              </div>
-
-              <div className="grid grid-3">
-                {products.map((product) => (
-                  <article className="card tight" key={product.id}>
-                    <div className="spread" style={{ alignItems: 'flex-start' }}>
-                      <div>
-                        <Link href={`/catalog/${product.id}`} className="product-name">
-                          {product.name}
-                        </Link>
-                        <div className="small muted">
-                          {[product.strength, product.packSize].filter(Boolean).join(' · ') || '—'}
-                        </div>
-                      </div>
-                      <span className={`badge ${product.inStock ? 'ok' : 'danger'}`}>
-                        {product.inStock ? 'in stock' : 'out of stock'}
-                      </span>
-                    </div>
-
-                    <div className="small faint" style={{ marginTop: 'var(--space-2)' }}>
-                      {product.manufacturerName ?? 'Manufacturer not recorded'}
-                      {product.dosageForm ? ` · ${product.dosageForm}` : ''}
-                    </div>
-
-                    <div className="spread" style={{ marginTop: 'var(--space-3)' }}>
-                      <div>
-                        <div className="price">
-                          {product.minPrice !== null ? formatMoney(product.minPrice) : '—'}
-                          {product.maxPrice !== null && product.maxPrice !== product.minPrice ? (
-                            <span className="small muted"> – {formatMoney(product.maxPrice)}</span>
-                          ) : null}
-                        </div>
-                        <div className="small faint">
-                          {product.supplierCount} supplier{product.supplierCount === 1 ? '' : 's'} ·{' '}
-                          {formatNumber(product.sellableQuantity)} sellable
-                        </div>
-                      </div>
-                      <Link className="btn small" href={`/catalog/${product.id}`}>
-                        View offers
-                      </Link>
-                    </div>
-
-                    <div className="pill-row" style={{ marginTop: 'var(--space-3)' }}>
-                      <span className="badge">{prescriptionLabel(product.prescriptionClassification)}</span>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              {pagination && pagination.totalPages > 1 && (
-                <nav className="row" aria-label="Pagination">
-                  {page > 1 && (
-                    <Link className="btn small" href={pageHref(page - 1)}>
-                      ← Previous
-                    </Link>
-                  )}
-                  <span className="small muted">
-                    Page {pagination.page} of {pagination.totalPages}
-                  </span>
-                  {page < pagination.totalPages && (
-                    <Link className="btn small" href={pageHref(page + 1)}>
-                      Next →
-                    </Link>
-                  )}
-                </nav>
-              )}
-            </>
-          )}
-        </section>
-      </div>
-    </>
+    </div>
   );
 }

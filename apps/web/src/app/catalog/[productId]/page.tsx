@@ -1,188 +1,246 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { serverGet } from '../../../lib/api';
-import { formatDate, formatMoney, formatNumber, prescriptionLabel, statusTone } from '../../../lib/format';
-import type { ProductDetail } from '../../../lib/types';
-import { AddToCart } from './add-to-cart';
+import { formatDate, humanise, prescriptionLabel } from '../../../lib/format';
+import type { Paginated, ProductDetail, ProductSummary } from '../../../lib/types';
+import { ProductVisual } from '../../../components/product-visual';
+import { ProductCard } from '../../../components/product-card';
+import { OfferPanel, OfferSummary } from './offer-panel';
+import { InfoIcon, ShieldIcon } from '../../../components/icons';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Product detail — the pharmaceutical answer to "can I stock this?".
+ *
+ * Everything a pharmacist needs to decide: composition, strength, pack,
+ * manufacturer, storage, prescription classification, and every verified
+ * supplier offer with batch, expiry, MOQ and lead time. Related products come
+ * from the same live category query. The purchase action stays server-backed:
+ * the offer panel posts a real listing id and renders the API's own cart
+ * response.
+ */
 export default async function ProductPage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
   const envelope = await serverGet<ProductDetail>(`/catalog/products/${productId}`);
 
   if (!envelope) {
     return (
-      <div className="empty">
-        <h2>The API did not respond</h2>
-        <p className="muted small">
-          The product could not be loaded. Check the platform status page; the catalogue request is
-          retried on every page view.
-        </p>
-        <Link className="btn" href="/catalog">
-          Back to catalogue
-        </Link>
+      <div className="container">
+        <div className="empty-card" style={{ marginTop: 'var(--space-lg)' }}>
+          <span className="ec-icon">
+            <InfoIcon size={24} />
+          </span>
+          <span className="ec-title">This product could not be loaded</span>
+          <p className="ec-body">
+            The API did not respond. The request is retried on every page view — check the platform
+            status page if this continues.
+          </p>
+          <div className="ec-actions">
+            <Link className="btn small" href="/status">
+              Platform status
+            </Link>
+            <Link className="btn primary small" href="/catalog">
+              Back to catalogue
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   const product = envelope.data;
+  if (!product) notFound();
+
   const offers = product.offers;
-  const bestPrice = offers.length ? offers[0]?.sellingPrice ?? null : null;
-  const sellable = offers.reduce((total, offer) => total + offer.sellableQuantity, 0);
-  const fastestLeadTime = offers
-    .map((offer) => offer.leadTimeMinutes)
-    .filter((minutes): minutes is number => minutes !== null)
-    .sort((a, b) => a - b)[0];
+  const relatedEnvelope = await serverGet<Paginated<ProductSummary>>('/catalog/products', {
+    query: { categoryId: product.category?.id, pageSize: 8 },
+  });
+  const related = (relatedEnvelope?.data?.items ?? [])
+    .filter((candidate) => candidate.id !== product.id)
+    .slice(0, 6);
+
+  const isRx = product.prescriptionClassification === 'PRESCRIPTION_REQUIRED';
 
   return (
-    <>
-      <nav className="small muted" style={{ marginBottom: 'var(--space-3)' }}>
-        <Link href="/catalog">Catalogue</Link> · <span>{product.category.name}</span>
+    <div className="container page-footroom">
+      <nav className="small muted" style={{ marginBottom: 'var(--space-3)' }} aria-label="Breadcrumb">
+        <Link href="/">Home</Link> · <Link href="/categories">Categories</Link> ·{' '}
+        <Link href={`/catalog?categoryId=${product.category?.id ?? ''}`}>{product.category?.name ?? 'Catalogue'}</Link>
       </nav>
 
-      <div className="page-head">
-        <div>
-          <h1>{product.name}</h1>
-          <p>
-            {[product.strength, product.packSize, product.packUnit].filter(Boolean).join(' · ') || 'Pack details not recorded'}
-            {product.manufacturerName ? ` · ${product.manufacturerName}` : ''}
-          </p>
-        </div>
-        <div className="pill-row">
-          <span className={`badge ${product.restricted ? 'danger' : 'info'}`}>
-            {prescriptionLabel(product.prescriptionClassification)}
-          </span>
-          <span className={`badge ${sellable > 0 ? 'ok' : 'danger'}`}>{sellable > 0 ? 'in stock' : 'out of stock'}</span>
-        </div>
-      </div>
-
-      <div className="grid" style={{ gridTemplateColumns: 'minmax(280px, 1fr) minmax(280px, 340px)', alignItems: 'start' }}>
-        <section className="stack">
-          <div className="card">
-            <div className="card-title">
-              <h2 style={{ margin: 0 }}>Supplier offers</h2>
-              <span className="small muted">
-                {offers.length} supplier{offers.length === 1 ? '' : 's'}
-                {bestPrice !== null ? ` · from ${formatMoney(bestPrice)}` : ''}
+      <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)', gap: 'var(--space-lg)' }}>
+        {/* Visual + identity */}
+        <section className="card" style={{ display: 'flex', gap: 'var(--space-lg)', flexWrap: 'wrap' }}>
+          <div style={{ flex: '0 1 240px', minWidth: 160 }}>
+            <ProductVisual
+              productId={product.id}
+              dosageForm={product.dosageForm}
+              size="lg"
+              label={product.name}
+            />
+          </div>
+          <div style={{ flex: '2 1 320px', minWidth: 0 }}>
+            <h1 style={{ fontSize: '1.375rem', marginBottom: 6 }}>{product.name}</h1>
+            <p className="muted" style={{ margin: '0 0 var(--space-3)', fontSize: '0.875rem' }}>
+              {[
+                product.compositionSummary ?? product.genericName,
+                product.strength,
+                product.packSize,
+                product.manufacturerName,
+              ]
+                .filter(Boolean)
+                .join(' · ') || 'Product details not recorded'}
+            </p>
+            <div className="pill-row" style={{ marginBottom: 'var(--space-3)' }}>
+              <span className={`badge ${product.restricted ? 'danger' : isRx ? 'info' : ''}`}>
+                {prescriptionLabel(product.prescriptionClassification)}
               </span>
+              {product.dosageForm && <span className="chip plain">{product.dosageForm}</span>}
+              <OfferSummary offers={offers} />
             </div>
-
-            {product.restricted ? (
-              <div className="alert warn">
-                This is a scheduled/controlled medicine. Availability is shown, but only a store with a
-                verified drug licence can order it.
+            <dl className="definition-grid" style={{ gap: '0.375rem var(--space-lg)' }}>
+              {product.genericName && (
+                <div style={{ display: 'contents' }}>
+                  <dt>Generic</dt>
+                  <dd>{product.genericName}</dd>
+                </div>
+              )}
+              {product.brandName && (
+                <div style={{ display: 'contents' }}>
+                  <dt>Brand</dt>
+                  <dd>{product.brandName}</dd>
+                </div>
+              )}
+              {product.compositionSummary && (
+                <div style={{ display: 'contents' }}>
+                  <dt>Composition</dt>
+                  <dd>{product.compositionSummary}</dd>
+                </div>
+              )}
+              {product.packUnit && (
+                <div style={{ display: 'contents' }}>
+                  <dt>Pack unit</dt>
+                  <dd>{product.packUnit}</dd>
+                </div>
+              )}
+              <div style={{ display: 'contents' }}>
+                <dt>Storage</dt>
+                <dd>{product.storageRequirements ?? 'Standard storage'}</dd>
               </div>
-            ) : offers.length === 0 ? (
-              <div className="empty" style={{ padding: 'var(--space-5)' }}>
-                <p style={{ marginBottom: 'var(--space-2)' }}>
-                  <strong>No verified supplier currently offers this product.</strong>
-                </p>
-                <p className="small muted" style={{ margin: 0 }}>
-                  Offers appear here as soon as a verified wholesaler publishes stock. Prices exclude tax
-                  unless stated.
-                </p>
+              <div style={{ display: 'contents' }}>
+                <dt>Catalogue updated</dt>
+                <dd>{formatDate(product.updatedAt)}</dd>
               </div>
-            ) : (
-              <div className="stack">
-                {offers.map((offer) => (
-                  <div className="list-item" key={offer.listingId}>
-                    <div>
-                      <div className="product-name">{offer.supplierName}</div>
-                      <div className="small muted">
-                        {offer.supplierCity ?? 'Location not recorded'} · MOQ {offer.minimumOrderQuantity}
-                        {offer.leadTimeMinutes ? ` · ready in ~${offer.leadTimeMinutes} min` : ''}
-                      </div>
-                      <div className="small faint">
-                        {offer.batchNumber ? `Batch ${offer.batchNumber}` : 'Batch on dispatch'}
-                        {offer.expiryDate ? ` · expires ${formatDate(offer.expiryDate)}` : ''}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div className="price">
-                        {formatMoney(offer.sellingPrice)}
-                        {offer.mrpReference ? <s>{formatMoney(offer.mrpReference)}</s> : null}
-                      </div>
-                      <div className="small faint">
-                        {formatNumber(offer.sellableQuantity)} sellable
-                        {offer.taxRate ? ` · GST ${offer.taxRate}%` : ''}
-                      </div>
-                      <div style={{ marginTop: 'var(--space-2)' }}>
-                        <AddToCart
-                          listingId={offer.listingId}
-                          productName={product.name}
-                          supplierName={offer.supplierName}
-                          minimumOrderQuantity={offer.minimumOrderQuantity}
-                          sellableQuantity={offer.sellableQuantity}
-                          unitPrice={offer.sellingPrice}
-                          restricted={product.restricted}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            </dl>
           </div>
         </section>
 
-        <aside className="stack">
-          <div className="card tight">
-            <h3>Product facts</h3>
+        {/* Offers */}
+        <section className="card">
+          <div className="spread" style={{ alignItems: 'baseline', marginBottom: 'var(--space-3)' }}>
+            <h2 style={{ margin: 0, fontSize: '1.0625rem' }}>
+              Supplier offers <span className="small muted">({offers.length})</span>
+            </h2>
+            <span className="small faint">
+              Best price first · every line is supplied by a single wholesaler
+            </span>
+          </div>
+          <OfferPanel
+            productId={product.id}
+            productName={product.name}
+            restricted={product.restricted}
+            offers={offers}
+            currency="INR"
+          />
+        </section>
+
+        {/* Facts + rules */}
+        <section className="grid grid-sidebar">
+          <div className="stack tight">
+            {product.description && (
+              <div className="card tight">
+                <h3 style={{ fontSize: '0.9375rem' }}>About this product</h3>
+                <p className="small muted" style={{ margin: 0 }}>
+                  {product.description}
+                </p>
+              </div>
+            )}
+            <div className="card tight">
+              <h3 style={{ fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ShieldIcon size={16} /> Ordering rules
+              </h3>
+              <ul className="small muted" style={{ paddingLeft: '1.1rem', margin: 0 }}>
+                <li>Stock is not reserved by the cart; it is reserved when checkout confirms.</li>
+                <li>Every line is supplied by a single wholesaler, so one order can create several fulfilments.</li>
+                <li>GST is applied per line from the supplier&apos;s tax rate.</li>
+                <li>
+                  Catalogue status: <span className="badge ok" style={{ verticalAlign: 'middle' }}>{humanise('PUBLISHED')}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <aside className="card tight">
+            <h3 style={{ fontSize: '0.9375rem' }}>At a glance</h3>
             <table>
               <tbody>
-                <tr>
-                  <td className="muted">Generic name</td>
-                  <td>{product.genericName ?? '—'}</td>
-                </tr>
-                <tr>
-                  <td className="muted">Brand</td>
-                  <td>{product.brandName ?? '—'}</td>
-                </tr>
-                <tr>
-                  <td className="muted">Composition</td>
-                  <td>{product.compositionSummary ?? '—'}</td>
-                </tr>
                 <tr>
                   <td className="muted">Dosage form</td>
                   <td>{product.dosageForm ?? '—'}</td>
                 </tr>
                 <tr>
-                  <td className="muted">Storage</td>
-                  <td>{product.storageRequirements ?? 'Standard'}</td>
+                  <td className="muted">Strength</td>
+                  <td>{product.strength ?? '—'}</td>
                 </tr>
                 <tr>
-                  <td className="muted">Fastest lead time</td>
-                  <td>{fastestLeadTime ? `${fastestLeadTime} min` : '—'}</td>
+                  <td className="muted">Pack size</td>
+                  <td>{product.packSize ?? '—'}</td>
                 </tr>
                 <tr>
-                  <td className="muted">Catalogue updated</td>
-                  <td>{formatDate(product.updatedAt)}</td>
+                  <td className="muted">Manufacturer</td>
+                  <td>{product.manufacturerName ?? '—'}</td>
+                </tr>
+                <tr>
+                  <td className="muted">Category</td>
+                  <td>{product.category?.name ?? '—'}</td>
+                </tr>
+                <tr>
+                  <td className="muted">Classification</td>
+                  <td>{prescriptionLabel(product.prescriptionClassification)}</td>
                 </tr>
               </tbody>
             </table>
-          </div>
+          </aside>
+        </section>
 
-          {product.description && (
-            <div className="card tight">
-              <h3>Description</h3>
-              <p className="small muted" style={{ margin: 0 }}>
-                {product.description}
-              </p>
+        {/* Related */}
+        {related.length > 0 && (
+          <section className="mk-section" style={{ marginBottom: 0 }}>
+            <div className="section-head">
+              <div>
+                <h2>More in {product.category?.name ?? 'this category'}</h2>
+                <p className="sub">Live availability from verified wholesalers</p>
+              </div>
+              <Link className="see-all" href={`/catalog?categoryId=${product.category?.id ?? ''}`}>
+                See all <ChevronRightInline />
+              </Link>
             </div>
-          )}
-
-          <div className="card tight">
-            <h3>Ordering rules</h3>
-            <ul className="small muted" style={{ paddingLeft: '1.1rem', margin: 0 }}>
-              <li>Stock is not reserved by the cart; it is reserved when checkout confirms.</li>
-              <li>Every line is supplied by a single wholesaler, so one order can create several fulfilments.</li>
-              <li>GST is applied per line from the supplier&apos;s tax rate.</li>
-              <li>Status of this product: <span className={`badge ${statusTone('PUBLISHED')}`}>published</span></li>
-            </ul>
-          </div>
-        </aside>
+            <div className="rail">
+              {related.map((candidate) => (
+                <ProductCard key={candidate.id} product={candidate} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
-    </>
+    </div>
+  );
+}
+
+function ChevronRightInline() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ verticalAlign: '-2px' }}>
+      <path d="m9 5 7 7-7 7" />
+    </svg>
   );
 }

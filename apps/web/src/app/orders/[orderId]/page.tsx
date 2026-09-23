@@ -23,6 +23,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '../../../lib/api';
 import { useAuth } from '../../../lib/auth-context';
 import { formatDate, formatDateTime, formatMoney, humanise, statusTone } from '../../../lib/format';
+import { FulfillmentTrack, OrderTrack } from '../../../components/order-tracking';
 import type {
   MockWebhookOutcome,
   OrderDetail,
@@ -155,35 +156,45 @@ export default function OrderDetailPage({ params }: { params: Promise<{ orderId:
     }
   }
 
-  if (!ready || loading) return <p className="muted">Loading the order…</p>;
+  if (!ready || loading) {
+    return (
+      <div className="container container-narrow" aria-busy="true">
+        <div className="skeleton" style={{ height: 28, width: 200, marginBottom: 16 }} />
+        <div className="skeleton" style={{ height: 180, borderRadius: 'var(--radius-lg)', marginBottom: 12 }} />
+        <div className="skeleton" style={{ height: 260, borderRadius: 'var(--radius-lg)' }} />
+      </div>
+    );
+  }
 
   if (!principal) {
     return (
-      <section className="stack">
-        <h1>Order</h1>
-        <p className="muted">Sign in to see this order.</p>
-        <Link className="btn primary" href="/login?next=%2Forders">
-          Sign in
-        </Link>
-      </section>
+      <div className="container">
+        <div className="empty-card" style={{ marginTop: 'var(--space-lg)' }}>
+          <span className="ec-title">Sign in to see this order</span>
+          <div className="ec-actions">
+            <Link className="btn primary small" href="/login?next=%2Forders">
+              Sign in
+            </Link>
+          </div>
+        </div>
+      </div>
     );
   }
 
   if (error && !order) {
     return (
-      <section className="stack">
-        <h1>Order</h1>
-        <div className="alert error" role="alert">
+      <div className="container container-narrow">
+        <div className="alert error" role="alert" style={{ marginTop: 'var(--space-lg)' }}>
           {error}
         </div>
-        <Link className="btn" href="/orders">
+        <Link className="btn small" href="/orders">
           Back to orders
         </Link>
-      </section>
+      </div>
     );
   }
 
-  if (!order) return <p className="muted">Order not found.</p>;
+  if (!order) return <div className="container"><p className="muted">Order not found.</p></div>;
 
   const canCancel = CANCELLABLE.has(order.status) && !['PAID', 'PARTIALLY_REFUNDED'].includes(order.paymentStatus);
   const payment = order.payment;
@@ -195,336 +206,357 @@ export default function OrderDetailPage({ params }: { params: Promise<{ orderId:
   const address = order.shippingAddress;
 
   return (
-    <section className="stack" style={{ gap: 'var(--space-5)' }}>
-      <header className="page-head">
-        <div>
-          <p className="eyebrow">
-            <Link className="link" href="/orders">
-              Orders
-            </Link>{' '}
-            / {order.orderNumber}
-          </p>
-          <h1 style={{ marginBottom: 6 }}>{order.orderNumber}</h1>
-          <div className="pill-row">
-            <span className={`badge ${statusTone(order.status)}`}>{humanise(order.status)}</span>
-            <span className={`badge ${statusTone(order.paymentStatus)}`}>
-              Payment {humanise(order.paymentStatus)}
-            </span>
-            <span className="chip plain">{order.deliveryMode === 'INSTANT' ? 'Instant' : 'Scheduled'}</span>
-            {order.deliveryDate && <span className="chip plain">{formatDate(order.deliveryDate)}</span>}
-            {order.activeReservations > 0 && (
-              <span className="chip info">{order.activeReservations} active reservation(s)</span>
-            )}
-          </div>
+    <div className="container container-narrow">
+      <nav className="small muted" style={{ marginBottom: 'var(--space-3)' }} aria-label="Breadcrumb">
+        <Link href="/">Home</Link> · <Link href="/orders">Orders</Link> · <span>{order.orderNumber}</span>
+      </nav>
+
+      <header style={{ marginBottom: 'var(--space-4)' }}>
+        <div className="spread" style={{ alignItems: 'baseline' }}>
+          <h1 style={{ fontSize: '1.375rem', margin: 0 }}>{order.orderNumber}</h1>
+          <span className="small faint">Placed {formatDateTime(order.placedAt)}</span>
         </div>
-        <span className="small faint">Placed {formatDateTime(order.placedAt)}</span>
+        <div className="pill-row" style={{ marginTop: 8 }}>
+          <span className={`badge ${statusTone(order.status)}`}>{humanise(order.status)}</span>
+          <span className={`badge ${statusTone(order.paymentStatus)}`}>
+            Payment {humanise(order.paymentStatus)}
+          </span>
+          <span className="chip plain">{order.deliveryMode === 'INSTANT' ? 'Instant' : 'Scheduled'}</span>
+          {order.deliveryDate && <span className="chip plain">{formatDate(order.deliveryDate)}</span>}
+          {order.activeReservations > 0 && (
+            <span className="chip info">{order.activeReservations} active reservation(s)</span>
+          )}
+        </div>
       </header>
 
       {notice && (
-        <div className="alert ok" role="status">
+        <div className="alert ok" role="status" style={{ marginBottom: 'var(--space-4)' }}>
           {notice}
         </div>
       )}
       {error && (
-        <div className="alert error" role="alert">
+        <div className="alert error" role="alert" style={{ marginBottom: 'var(--space-4)' }}>
           {error}
         </div>
       )}
 
-      <div className="grid grid-sidebar">
-        <div className="stack" style={{ gap: 'var(--space-4)' }}>
-          <div className="card">
-            <h2 className="card-title">Items</h2>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Supplier</th>
-                    <th style={{ width: 70 }}>Qty</th>
-                    <th style={{ width: 100 }}>Price</th>
-                    <th style={{ width: 110 }}>Line total</th>
-                    <th style={{ width: 120 }}>Line status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {order.items.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        <div className="product-name">{item.productName}</div>
-                        <div className="small faint">
-                          {[item.manufacturerName, item.packSize, item.composition].filter(Boolean).join(' · ')}
-                        </div>
-                      </td>
-                      <td className="small">{item.supplierName ?? '—'}</td>
-                      <td className="mono">{item.quantity}</td>
-                      <td className="mono">{formatMoney(item.unitPrice, order.currency)}</td>
-                      <td className="mono">{formatMoney(item.lineTotal, order.currency)}</td>
-                      <td>
-                        <span className={`badge ${statusTone(item.status)}`}>{humanise(item.status)}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      <div className="stack" style={{ gap: 'var(--space-4)' }}>
+        {/* Visual tracking — order spine */}
+        <section className="card">
+          <div className="spread" style={{ alignItems: 'baseline', marginBottom: 'var(--space-3)' }}>
+            <h2 style={{ fontSize: '1.0625rem', margin: 0 }}>Order progress</h2>
+            <span className="small faint">
+              Every stage below is recorded by the platform — never estimated by this screen
+            </span>
           </div>
+          <OrderTrack order={order} />
+        </section>
 
-          <div className="card">
-            <h2 className="card-title">Fulfilments</h2>
-            <p className="hint" style={{ marginTop: 0 }}>
-              One fulfilment per wholesaler: the order is a single commercial contract, but the goods are picked,
-              packed and moved by each supplier independently.
-            </p>
-            <div className="stack" style={{ gap: 'var(--space-3)' }}>
-              {order.fulfillments.map((fulfilment) => (
-                <div className="card tight" key={fulfilment.id}>
-                  <div className="row spread" style={{ alignItems: 'baseline' }}>
-                    <div>
-                      <span className="mono" style={{ fontWeight: 700 }}>
-                        {fulfilment.fulfillmentReference}
-                      </span>
-                      <span className="small faint" style={{ marginLeft: 10 }}>
-                        {fulfilment.supplierName ?? 'Supplier'} · {fulfilment.unitCount} unit(s)
-                      </span>
-                    </div>
-                    <span className={`badge ${statusTone(fulfilment.status)}`}>{humanise(fulfilment.status)}</span>
-                  </div>
-                  <div className="row small" style={{ gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
-                    <span className="faint">Goods {formatMoney(fulfilment.subtotal, order.currency)}</span>
-                    <span className="faint">Tax {formatMoney(fulfilment.taxTotal, order.currency)}</span>
-                    <span className="faint">
-                      Delivery share {formatMoney(fulfilment.deliveryAllocation, order.currency)}
+        {/* Per-supplier journeys */}
+        <section className="card">
+          <div className="spread" style={{ alignItems: 'baseline', marginBottom: 'var(--space-3)' }}>
+            <h2 style={{ fontSize: '1.0625rem', margin: 0 }}>
+              Supplier journeys <span className="small muted">({order.fulfillments.length})</span>
+            </h2>
+            <span className="small faint">Picker → Bezzo hub → your counter, per wholesaler</span>
+          </div>
+          <div className="stack" style={{ gap: 'var(--space-4)' }}>
+            {order.fulfillments.map((fulfilment) => (
+              <div
+                key={fulfilment.id}
+                style={{
+                  border: '1px solid var(--bg-inset)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 'var(--space-3)',
+                  background: 'var(--surface)',
+                }}
+              >
+                <div className="spread" style={{ alignItems: 'baseline', marginBottom: 'var(--space-3)' }}>
+                  <div>
+                    <span className="mono" style={{ fontWeight: 700 }}>
+                      {fulfilment.fulfillmentReference}
                     </span>
-                    <span className="mono">{formatMoney(fulfilment.total, order.currency)}</span>
+                    <span className="small faint" style={{ marginLeft: 10 }}>
+                      {fulfilment.supplierName ?? 'Supplier'} · {fulfilment.unitCount} unit
+                      {fulfilment.unitCount === 1 ? '' : 's'} · {formatMoney(fulfilment.total, order.currency)}
+                    </span>
                   </div>
-                  <div className="row small faint" style={{ gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
-                    {fulfilment.acceptedAt && <span>accepted {formatDateTime(fulfilment.acceptedAt)}</span>}
-                    {fulfilment.packedAt && <span>packed {formatDateTime(fulfilment.packedAt)}</span>}
-                    {fulfilment.readyAt && <span>ready {formatDateTime(fulfilment.readyAt)}</span>}
-                    {fulfilment.collectedAt && <span>collected {formatDateTime(fulfilment.collectedAt)}</span>}
-                    {fulfilment.deliveredAt && <span>delivered {formatDateTime(fulfilment.deliveredAt)}</span>}
-                    {fulfilment.cancelledAt && <span>cancelled {formatDateTime(fulfilment.cancelledAt)}</span>}
-                  </div>
+                  <span className={`badge ${statusTone(fulfilment.status)}`}>
+                    {humanise(fulfilment.status)}
+                  </span>
                 </div>
-              ))}
-            </div>
+                <FulfillmentTrack fulfillment={fulfilment} />
+              </div>
+            ))}
           </div>
+        </section>
 
-          <div className="card">
-            <h2 className="card-title">Timeline</h2>
-            <ol className="list" style={{ marginTop: 0 }}>
-              {order.timeline.map((entry, index) => (
-                <li className="list-item" key={`${entry.toStatus}-${index}`}>
-                  <div className="row spread" style={{ alignItems: 'baseline' }}>
-                    <span>
-                      {entry.fromStatus ? `${humanise(entry.fromStatus)} → ` : ''}
-                      <strong>{humanise(entry.toStatus)}</strong>
-                    </span>
-                    <span className="small faint">{formatDateTime(entry.createdAt)}</span>
-                  </div>
-                  <div className="small faint">
-                    {entry.reason ?? 'Status change recorded by the platform'} · by {humanise(entry.actorType)}
-                  </div>
-                </li>
-              ))}
-            </ol>
+        {/* Items */}
+        <section className="card">
+          <h2 className="card-title">Items</h2>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Supplier</th>
+                  <th style={{ width: 70 }}>Qty</th>
+                  <th style={{ width: 100 }}>Price</th>
+                  <th style={{ width: 110 }}>Line total</th>
+                  <th style={{ width: 120 }}>Line status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {order.items.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <div className="product-name">{item.productName}</div>
+                      <div className="small faint">
+                        {[item.manufacturerName, item.packSize, item.composition].filter(Boolean).join(' · ')}
+                      </div>
+                    </td>
+                    <td className="small">{item.supplierName ?? '—'}</td>
+                    <td className="mono">{item.quantity}</td>
+                    <td className="mono">{formatMoney(item.unitPrice, order.currency)}</td>
+                    <td className="mono">{formatMoney(item.lineTotal, order.currency)}</td>
+                    <td>
+                      <span className={`badge ${statusTone(item.status)}`}>{humanise(item.status)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </section>
 
-        <aside className="stack" style={{ gap: 'var(--space-4)', alignSelf: 'start' }}>
-          <div className="card stack" style={{ gap: 6 }}>
-            <h2 className="card-title">Payment</h2>
-            {payment ? (
-              <>
-                <span className="row spread small">
-                  <span className="muted">Status</span>
-                  <span className={`badge ${statusTone(payment.status)}`}>{humanise(payment.status)}</span>
-                </span>
-                <span className="row spread small">
-                  <span className="muted">Method</span>
-                  <span>{humanise(payment.method)}</span>
-                </span>
-                <span className="row spread small">
-                  <span className="muted">Gateway</span>
-                  <span className="mono">{payment.gateway}</span>
-                </span>
-                {payment.providerReference && (
-                  <span className="row spread small">
-                    <span className="muted">Reference</span>
-                    <span className="mono">{payment.providerReference.slice(0, 20)}…</span>
-                  </span>
-                )}
-                <div className="divider" />
-                <span className="row spread">
-                  <span className="label-md">Amount</span>
-                  <span className="price mono">{formatMoney(payment.amount, payment.currency)}</span>
-                </span>
-                {payment.refundedAmount > 0 && (
-                  <span className="row spread small">
-                    <span className="muted">Refunded</span>
-                    <span className="mono">{formatMoney(payment.refundedAmount, payment.currency)}</span>
-                  </span>
-                )}
-                {payment.failureMessage && (
-                  <p className="hint" style={{ margin: 0 }}>
-                    {payment.failureMessage} — the order stands; the payment can be retried.
-                  </p>
-                )}
-
-                {retryable && (
-                  <>
-                    <div className="divider" />
-                    <p className="hint" style={{ margin: 0 }}>
-                      {humanise(payment.method)} payments are confirmed by the gateway, never by this screen. The
-                      order is confirmed the moment the gateway&apos;s signed webhook reaches the API.
-                    </p>
-                    <button
-                      type="button"
-                      className="btn primary"
-                      disabled={paymentBusy !== null}
-                      onClick={() => void retryPayment()}
-                    >
-                      {paymentBusy === 'retry' ? 'Creating an attempt…' : 'Retry payment'}
-                    </button>
-                  </>
-                )}
-
-                {isSimulatedGateway && retryable && (
-                  <div className="stack tight" style={{ gap: 6 }}>
-                    <span className="chip warn" style={{ alignSelf: 'flex-start' }}>
-                      Development gateway
-                    </span>
-                    <p className="hint" style={{ margin: 0 }}>
-                      No live gateway is configured, so these buttons ask the API to sign a webhook body with the
-                      mock provider&apos;s own signer and deliver it through the production webhook handler.
-                    </p>
-                    <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn accent small"
-                        disabled={paymentBusy !== null}
-                        onClick={() => void simulate('PAID')}
-                      >
-                        Simulate capture
-                      </button>
-                      <button
-                        type="button"
-                        className="btn small"
-                        disabled={paymentBusy !== null}
-                        onClick={() => void simulate('FAILED')}
-                      >
-                        Simulate failure
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="muted small" style={{ margin: 0 }}>
-                No payment record on this order.
-              </p>
-            )}
-          </div>
-
-          {refunds.length > 0 && (
+        <div className="grid grid-sidebar">
+          <div className="stack" style={{ gap: 'var(--space-4)' }}>
+            {/* Payment + actions */}
             <div className="card stack" style={{ gap: 6 }}>
-              <h2 className="card-title">Refunds</h2>
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Amount</th>
-                      <th>Status</th>
-                      <th>Recorded</th>
-                      <th>Reference</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {refunds.map((refund) => (
-                      <tr key={refund.id}>
-                        <td className="mono">{formatMoney(refund.amount, order.currency)}</td>
-                        <td>
-                          <span className={`badge ${statusTone(refund.status)}`}>{humanise(refund.status)}</span>
-                        </td>
-                        <td className="small faint">{formatDateTime(refund.createdAt)}</td>
-                        <td className="small mono faint">
-                          {refund.gatewayRefundReference ? `${refund.gatewayRefundReference.slice(0, 16)}…` : '—'}
-                        </td>
+              <h2 className="card-title">Payment</h2>
+              {payment ? (
+                <>
+                  <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
+                    <span className="muted">Status</span>
+                    <span className={`badge ${statusTone(payment.status)}`}>{humanise(payment.status)}</span>
+                  </span>
+                  <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
+                    <span className="muted">Method</span>
+                    <span>{humanise(payment.method)}</span>
+                  </span>
+                  <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
+                    <span className="muted">Gateway</span>
+                    <span className="mono">{payment.gateway}</span>
+                  </span>
+                  {payment.providerReference && (
+                    <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
+                      <span className="muted">Reference</span>
+                      <span className="mono">{payment.providerReference.slice(0, 20)}…</span>
+                    </span>
+                  )}
+                  <div className="divider" style={{ margin: '6px 0' }} />
+                  <span className="row spread" style={{ flexWrap: 'nowrap' }}>
+                    <span className="label-md">Amount</span>
+                    <span className="price mono">{formatMoney(payment.amount, payment.currency)}</span>
+                  </span>
+                  {payment.refundedAmount > 0 && (
+                    <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
+                      <span className="muted">Refunded</span>
+                      <span className="mono">{formatMoney(payment.refundedAmount, payment.currency)}</span>
+                    </span>
+                  )}
+                  {payment.failureMessage && (
+                    <p className="hint" style={{ margin: 0 }}>
+                      {payment.failureMessage} — the order stands; the payment can be retried.
+                    </p>
+                  )}
+
+                  {retryable && (
+                    <>
+                      <div className="divider" style={{ margin: '6px 0' }} />
+                      <p className="hint" style={{ margin: 0 }}>
+                        {humanise(payment.method)} payments are confirmed by the gateway, never by this
+                        screen. The order is confirmed the moment the gateway&apos;s signed webhook
+                        reaches the API.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn primary"
+                        disabled={paymentBusy !== null}
+                        onClick={() => void retryPayment()}
+                      >
+                        {paymentBusy === 'retry' ? 'Creating an attempt…' : 'Retry payment'}
+                      </button>
+                    </>
+                  )}
+
+                  {isSimulatedGateway && retryable && (
+                    <div className="stack tight" style={{ gap: 6 }}>
+                      <span className="chip warn" style={{ alignSelf: 'flex-start' }}>
+                        Development gateway
+                      </span>
+                      <p className="hint" style={{ margin: 0 }}>
+                        No live gateway is configured, so these buttons ask the API to sign a webhook
+                        body with the mock provider&apos;s own signer and deliver it through the
+                        production webhook handler.
+                      </p>
+                      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn accent small"
+                          disabled={paymentBusy !== null}
+                          onClick={() => void simulate('PAID')}
+                        >
+                          Simulate capture
+                        </button>
+                        <button
+                          type="button"
+                          className="btn small"
+                          disabled={paymentBusy !== null}
+                          onClick={() => void simulate('FAILED')}
+                        >
+                          Simulate failure
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="muted small" style={{ margin: 0 }}>
+                  No payment record on this order.
+                </p>
+              )}
+            </div>
+
+            {refunds.length > 0 && (
+              <div className="card stack" style={{ gap: 6 }}>
+                <h2 className="card-title">Refunds</h2>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Recorded</th>
+                        <th>Reference</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {refunds.map((refund) => (
+                        <tr key={refund.id}>
+                          <td className="mono">{formatMoney(refund.amount, order.currency)}</td>
+                          <td>
+                            <span className={`badge ${statusTone(refund.status)}`}>
+                              {humanise(refund.status)}
+                            </span>
+                          </td>
+                          <td className="small faint">{formatDateTime(refund.createdAt)}</td>
+                          <td className="small mono faint">
+                            {refund.gatewayRefundReference
+                              ? `${refund.gatewayRefundReference.slice(0, 16)}…`
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="hint" style={{ margin: 0 }}>
+                  A refund only moves the payment once the gateway answers; the record above is written
+                  first, so a gateway that never replies leaves evidence rather than silence.
+                </p>
               </div>
-              <p className="hint" style={{ margin: 0 }}>
-                A refund only moves the payment once the gateway answers; the record above is written first, so a
-                gateway that never replies leaves evidence rather than silence.
-              </p>
+            )}
+
+            <div className="card stack" style={{ gap: 6 }}>
+              <h2 className="card-title">Audit timeline</h2>
+              <ol className="list" style={{ marginTop: 0 }}>
+                {order.timeline.map((entry, index) => (
+                  <li className="list-item" key={`${entry.toStatus}-${index}`}>
+                    <div className="row spread" style={{ alignItems: 'baseline' }}>
+                      <span>
+                        {entry.fromStatus ? `${humanise(entry.fromStatus)} → ` : ''}
+                        <strong>{humanise(entry.toStatus)}</strong>
+                      </span>
+                      <span className="small faint">{formatDateTime(entry.createdAt)}</span>
+                    </div>
+                    <div className="small faint">
+                      {entry.reason ?? 'Status change recorded by the platform'} · by{' '}
+                      {humanise(entry.actorType)}
+                    </div>
+                  </li>
+                ))}
+              </ol>
             </div>
-          )}
-
-          <div className="card stack" style={{ gap: 6 }}>
-            <h2 className="card-title">Totals</h2>
-            <span className="row spread small">
-              <span className="muted">Subtotal</span>
-              <span className="mono">{formatMoney(order.subtotal, order.currency)}</span>
-            </span>
-            <span className="row spread small">
-              <span className="muted">Tax</span>
-              <span className="mono">{formatMoney(order.taxTotal, order.currency)}</span>
-            </span>
-            <span className="row spread small">
-              <span className="muted">Delivery</span>
-              <span className="mono">{formatMoney(order.deliveryFee, order.currency)}</span>
-            </span>
-            <div className="divider" />
-            <span className="row spread">
-              <span className="label-md">Grand total</span>
-              <span className="price mono">{formatMoney(order.grandTotal, order.currency)}</span>
-            </span>
           </div>
 
-          <div className="card stack" style={{ gap: 6 }}>
-            <h2 className="card-title">Delivery</h2>
-            <p className="muted small" style={{ margin: 0 }}>
-              {[address.contactName, address.contactPhone].filter(Boolean).join(' · ')}
-              <br />
-              {[address.addressLine1, address.addressLine2, address.landmark, address.city, address.state]
-                .filter(Boolean)
-                .join(', ')}{' '}
-              <span className="mono">{address.postalCode}</span>
-            </p>
-            {order.buyerNote && <p className="hint">Note: {order.buyerNote}</p>}
-            <p className="hint" style={{ margin: 0 }}>
-              The address is the snapshot taken when the order was placed — editing it later does not rewrite history.
-            </p>
-          </div>
+          <aside className="stack" style={{ gap: 'var(--space-4)', alignSelf: 'start' }}>
+            <div className="card stack" style={{ gap: 6 }}>
+              <h2 className="card-title">Totals</h2>
+              <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
+                <span className="muted">Subtotal</span>
+                <span className="mono">{formatMoney(order.subtotal, order.currency)}</span>
+              </span>
+              <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
+                <span className="muted">Tax</span>
+                <span className="mono">{formatMoney(order.taxTotal, order.currency)}</span>
+              </span>
+              <span className="row spread small" style={{ flexWrap: 'nowrap' }}>
+                <span className="muted">Delivery</span>
+                <span className="mono">{formatMoney(order.deliveryFee, order.currency)}</span>
+              </span>
+              <div className="divider" style={{ margin: '6px 0' }} />
+              <span className="row spread" style={{ flexWrap: 'nowrap' }}>
+                <span className="label-md">Grand total</span>
+                <span className="price mono" style={{ fontWeight: 700 }}>
+                  {formatMoney(order.grandTotal, order.currency)}
+                </span>
+              </span>
+            </div>
 
-          {canCancel && (
-            <div className="card stack" style={{ gap: 8 }}>
-              <h2 className="card-title">Cancel this order</h2>
+            <div className="card stack" style={{ gap: 6 }}>
+              <h2 className="card-title">Delivery</h2>
               <p className="muted small" style={{ margin: 0 }}>
-                Allowed only while nothing has been picked and nothing has been paid. The release is idempotent, so a
-                retried cancel cannot restock twice.
+                {[address.contactName, address.contactPhone].filter(Boolean).join(' · ')}
+                <br />
+                {[address.addressLine1, address.addressLine2, address.landmark, address.city, address.state]
+                  .filter(Boolean)
+                  .join(', ')}{' '}
+                <span className="mono">{address.postalCode}</span>
               </p>
-              <div className="field full">
-                <label htmlFor="reason">Reason (optional)</label>
-                <input
-                  id="reason"
-                  type="text"
-                  maxLength={300}
-                  value={reason}
-                  placeholder="Ordered by mistake"
-                  onChange={(event) => setReason(event.target.value)}
-                />
-              </div>
-              <button type="button" className="btn danger" disabled={cancelling} onClick={() => void cancel()}>
-                {cancelling ? 'Cancelling…' : 'Cancel order'}
-              </button>
+              {order.buyerNote && <p className="hint">Note: {order.buyerNote}</p>}
+              <p className="hint" style={{ margin: 0 }}>
+                The address is the snapshot taken when the order was placed — editing it later does not
+                rewrite history.
+              </p>
             </div>
-          )}
-        </aside>
+
+            {canCancel && (
+              <div className="card stack" style={{ gap: 8 }}>
+                <h2 className="card-title">Cancel this order</h2>
+                <p className="muted small" style={{ margin: 0 }}>
+                  Allowed only while nothing has been picked and nothing has been paid. The release is
+                  idempotent, so a retried cancel cannot restock twice.
+                </p>
+                <div className="field full">
+                  <label htmlFor="reason">Reason (optional)</label>
+                  <input
+                    id="reason"
+                    type="text"
+                    maxLength={300}
+                    value={reason}
+                    placeholder="Ordered by mistake"
+                    onChange={(event) => setReason(event.target.value)}
+                  />
+                </div>
+                <button type="button" className="btn danger" disabled={cancelling} onClick={() => void cancel()}>
+                  {cancelling ? 'Cancelling…' : 'Cancel order'}
+                </button>
+              </div>
+            )}
+          </aside>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }

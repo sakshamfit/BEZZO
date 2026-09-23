@@ -1,257 +1,211 @@
 import Link from 'next/link';
 import { serverGet } from '../lib/api';
-import type { ApplicationRouting, HealthSnapshot, VersionSnapshot } from '../lib/types';
+import { formatNumber } from '../lib/format';
+import type { Category, Paginated, ProductSummary } from '../lib/types';
+import { HomeIntro } from '../components/home-intro';
+import { QuickOrderRail, RecentlyOrderedRail } from '../components/buyer-rails';
+import { ProductCard } from '../components/product-card';
+import { CategoryVisual } from '../components/category-visual';
+import { ChevronRight, HubIcon, ShieldIcon, TruckIcon } from '../components/icons';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Landing page.
+ * Marketplace home — the retailer's primary surface.
  *
- * Server-rendered so the platform's own health is visible even before a browser signs in, and so the
- * page never shows a blank screen when the API is unavailable: a failed fetch degrades to an explicit
- * "status unavailable" panel.
+ * Server-rendered rails from real endpoints: categories (cached 5 minutes),
+ * widely-stocked products and the newest catalogue entries. Buyer-personal
+ * rails (quick order, order again) hydrate client-side from the order history.
+ * The catalogue is public with uniform trade prices, so a signed-out visitor
+ * sees the same honest marketplace — with a sign-in prompt, not a paywall.
  */
 export default async function HomePage() {
-  const [healthEnvelope, versionEnvelope, routingEnvelope] = await Promise.all([
-    serverGet<HealthSnapshot>('/health'),
-    serverGet<VersionSnapshot>('/version'),
-    // The partner-intake WhatsApp line is configuration, so it is read, never typed into the markup.
-    serverGet<ApplicationRouting>('/applications/routing'),
+  const [categoriesEnvelope, stockedEnvelope, newestEnvelope] = await Promise.all([
+    serverGet<Category[]>('/catalog/categories', { revalidateSeconds: 300 }),
+    serverGet<Paginated<ProductSummary>>('/catalog/products', { query: { pageSize: 24 } }),
+    serverGet<Paginated<ProductSummary>>('/catalog/products', {
+      query: { pageSize: 18, sort: 'created_desc' },
+    }),
   ]);
 
-  const health = healthEnvelope?.data ?? null;
-  const version = versionEnvelope?.data ?? null;
-  const routing = routingEnvelope?.data ?? null;
-  const applyLine = routing?.whatsappNumber ?? null;
+  const categories = (categoriesEnvelope?.data ?? []).slice(0, 10);
+  const stocked = stockedEnvelope?.data?.items ?? [];
+  const newest = newestEnvelope?.data?.items ?? [];
 
-  const stages = [
-    { title: 'Order', detail: 'The retailer places a single order; pricing and stock are validated server-side.' },
-    { title: 'Fulfilment', detail: 'One order splits into one fulfilment per supplier — never a generic order state.' },
-    { title: 'Pickup', detail: 'A picker is offered the collection task; exactly one picker can claim it.' },
-    { title: 'Hub receiving', detail: 'Every package is scanned into the Bezzo hub; discrepancies stay visible.' },
-    { title: 'Delivery', detail: 'The hub dispatches to the retailer through the logistics provider adapter.' },
-  ];
-
-  const audiences = [
-    {
-      title: 'Medical stores',
-      body: 'Source from verified wholesalers, see live trade prices and stock, and track every stage to your counter.',
-      href: '/catalog',
-      cta: 'Browse the catalogue',
-    },
-    {
-      title: 'Wholesalers',
-      body: 'Publish offers and stock, receive pickup tasks before the cut-off, and reconcile settlements.',
-      href: '/supplier',
-      cta: 'Open the supplier workspace',
-    },
-    {
-      title: 'Pickers',
-      body: 'Claim collection tasks, scan packages at the supplier and hand them over at the hub.',
-      href: '/login',
-      cta: 'Sign in to the picker app',
-    },
-    {
-      title: 'Operations',
-      body: 'Verify suppliers and stores, resolve discrepancies, and watch platform health and queues.',
-      href: '/status',
-      cta: 'View platform status',
-    },
-  ];
-
-  /* One intake for every partnership; every submission is routed to the operations WhatsApp line. */
-  const applyHref = '/apply';
+  // "Widely stocked": several verified suppliers compete on this line — the
+  // honest version of a "recommended" rail.
+  const multiSupplier = stocked.filter((product) => product.supplierCount >= 2).slice(0, 10);
+  const stockedRail = multiSupplier.length >= 4 ? multiSupplier : stocked.slice(0, 10);
+  const apiReachable = Boolean(stockedEnvelope);
 
   return (
-    <>
-      <section className="hero">
-        <p className="eyebrow">Healthcare. Simplified.</p>
-        <h1>Verified wholesalers. Verified pharmacies. One controlled supply chain.</h1>
-        <p>
-          BEZZO is the B2B pharmaceutical marketplace between licensed wholesalers and licensed medical
-          stores, with Bezzo-collected pickups, hub receiving and final delivery tracked as separate,
-          auditable stages.
-        </p>
-        <div className="row">
-          <Link className="btn primary" href="/apply">
-            Apply to partner
-          </Link>
-          <Link className="btn" href="/catalog">
-            Browse the catalogue
-          </Link>
-          <Link className="btn" href="/login">
-            Sign in
-          </Link>
-        </div>
+    <div className="container container-narrow" style={{ paddingTop: 'var(--space-md)' }}>
+      <HomeIntro />
 
-        <div className="hero-stat-row">
-          <div className="hero-stat">
-            <div className="label">Verification</div>
-            <div className="value">Human-reviewed</div>
-          </div>
-          <div className="hero-stat">
-            <div className="label">Applications routed to</div>
-            <div className="value mono">{applyLine ?? 'Operations WhatsApp line'}</div>
-          </div>
-          <div className="hero-stat">
-            <div className="label">Pickup</div>
-            <div className="value">Picker → Bezzo hub</div>
-          </div>
-          <div className="hero-stat">
-            <div className="label">Final delivery</div>
-            <div className="value">Hub → your counter</div>
-          </div>
-        </div>
-      </section>
+      {/* Storefront banner strip — platform facts (slots, invoices, verification),
+          not promotions: there is no discount engine to draw from, so nothing
+          here invents one. */}
+      <div className="promo-rail" aria-label="Platform highlights">
+        <Link href="/catalog" className="promo-banner pb-teal">
+          <span className="pb-kicker">Delivery</span>
+          <span className="pb-title">Quick or scheduled — you choose the slot</span>
+          <span className="pb-sub">
+            Slot capacity is checked live while you check out, and each supplier keeps its own
+            pickup window.
+          </span>
+          <span className="pb-icon" aria-hidden="true">
+            <TruckIcon size={56} />
+          </span>
+        </Link>
+        <Link href="/orders" className="promo-banner pb-navy">
+          <span className="pb-kicker">Invoicing</span>
+          <span className="pb-title">GST invoices, batch and expiry on every line</span>
+          <span className="pb-sub">
+            Every fulfilment is invoiced by the supplying wholesaler — the paper trail matches the
+            goods that arrive.
+          </span>
+          <span className="pb-icon" aria-hidden="true">
+            <HubIcon size={56} />
+          </span>
+        </Link>
+        <Link href="/apply" className="promo-banner pb-slate">
+          <span className="pb-kicker">Verification</span>
+          <span className="pb-title">Only licence-verified wholesalers sell here</span>
+          <span className="pb-sub">
+            Suppliers pass drug-licence checks before a single unit becomes sellable, and only
+            verified medical stores can order.
+          </span>
+          <span className="pb-icon" aria-hidden="true">
+            <ShieldIcon size={56} />
+          </span>
+        </Link>
+      </div>
 
-      <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-        <p className="label-sm">The journey of one order</p>
-        <ul className="stage-track" style={{ marginTop: 'var(--space-sm)' }}>
-          {stages.map((stage) => (
-            <li key={stage.title}>{stage.title}</li>
-          ))}
-        </ul>
-      </section>
+      {!apiReachable && (
+        <div className="alert error" role="alert" style={{ marginBottom: 'var(--space-md)' }}>
+          The catalogue could not be loaded just now. Check the{' '}
+          <Link className="link" href="/status">
+            platform status
+          </Link>{' '}
+          and refresh — prices and stock are never cached by the browser.
+        </div>
+      )}
 
-      <section className="grid grid-4" style={{ marginBottom: 'var(--space-6)' }}>
-        <div className="kpi">
-          <div className="label">Platform</div>
-          <div className="value" style={{ fontSize: '1.1rem' }}>
-            {health ? (
-              <span className={`badge ${health.status === 'ok' ? 'ok' : 'warn'}`}>{health.status.toUpperCase()}</span>
-            ) : (
-              <span className="badge danger">UNAVAILABLE</span>
-            )}
-          </div>
-          <div className="small muted">{version ? `v${version.version} · ${version.environment}` : 'API not reachable'}</div>
-        </div>
-        <div className="kpi">
-          <div className="label">Database</div>
-          <div className="value" style={{ fontSize: '1.1rem' }}>
-            {health?.dependencies?.database ? (
-              <span className={`badge ${health.dependencies.database.status === 'ok' ? 'ok' : 'danger'}`}>
-                {health.dependencies.database.status.toUpperCase()}
-              </span>
-            ) : (
-              <span className="badge">—</span>
-            )}
-          </div>
-          <div className="small muted">
-            {health?.dependencies?.database?.latencyMs !== undefined
-              ? `${health.dependencies.database.latencyMs} ms round-trip`
-              : 'source of truth'}
-          </div>
-        </div>
-        <div className="kpi">
-          <div className="label">Search</div>
-          <div className="value" style={{ fontSize: '1.1rem' }}>
-            {version ? (
-              version.features?.search ? (
-                <span className="badge ok">OPENSEARCH</span>
-              ) : (
-                <span className="badge warn">DEGRADED</span>
-              )
-            ) : (
-              <span className="badge">—</span>
-            )}
-          </div>
-          <div className="small muted">
-            {version ? (version.features?.search ? 'primary search path' : 'database fallback in use') : '—'}
-          </div>
-        </div>
-        <div className="kpi">
-          <div className="label">Providers</div>
-          <div className="value" style={{ fontSize: '1.1rem' }}>
-            {version ? (
-              <span className="badge info">
-                {String(version.features?.payments ?? '—').toUpperCase()} / {String(version.features?.logistics ?? '—').toUpperCase()}
-              </span>
-            ) : (
-              <span className="badge">—</span>
-            )}
-          </div>
-          <div className="small muted">payments / logistics adapters</div>
-        </div>
-      </section>
-
-      <section style={{ marginBottom: 'var(--space-6)' }}>
-        <div className="page-head">
+      <section className="mk-section">
+        <div className="section-head">
           <div>
-            <h2>One order, controlled stages</h2>
-            <p>
-              BEZZO never collapses physical movement into a single status. Each stage has its own entity,
-              its own state machine and its own audit trail.
-            </p>
+            <h2>Shop by category</h2>
+            <p className="sub">The catalogue, organised the way you stock it</p>
           </div>
+          <Link className="see-all" href="/categories">
+            All categories <ChevronRight size={14} />
+          </Link>
         </div>
-        <div className="grid grid-3">
-          {stages.map((stage, index) => (
-            <div className="card" key={stage.title}>
-              <div className="badge info">Stage {index + 1}</div>
-              <h3 style={{ marginTop: 'var(--space-3)' }}>{stage.title}</h3>
-              <p className="muted small" style={{ margin: 0 }}>
-                {stage.detail}
-              </p>
-            </div>
+        <div className="cat-rail">
+          {categories.map((category) => (
+            <Link
+              key={category.id}
+              href={`/catalog?categoryId=${category.id}`}
+              className="cat-tile"
+              aria-label={`${category.name}${typeof category.productCount === 'number' ? ` — ${category.productCount} products` : ''}`}
+            >
+              <CategoryVisual categoryKey={category.id} name={category.name} />
+              <span className="ct-name">{category.name}</span>
+              {typeof category.productCount === 'number' && (
+                <span className="ct-count">{formatNumber(category.productCount)} items</span>
+              )}
+            </Link>
           ))}
         </div>
       </section>
 
-      <section>
-        <div className="page-head">
-          <div>
-            <h2>Built for every role on the platform</h2>
-            <p>Access is decided server-side from role, permission, ownership and resource state.</p>
-          </div>
-        </div>
-        <div className="grid grid-4">
-          {audiences.map((audience) => (
-            <div className="card interactive" key={audience.title}>
-              <h3>{audience.title}</h3>
-              <p className="muted small">{audience.body}</p>
-              <Link className="btn small" href={audience.href}>
-                {audience.cta}
-              </Link>
-            </div>
-          ))}
-        </div>
+      <QuickOrderRail />
 
-        <div className="card feature spread" style={{ marginTop: 'var(--space-lg)' }}>
-          <div>
-            <p className="label-sm">Not on the platform yet?</p>
-            <h2 style={{ marginBottom: 'var(--space-xs)' }}>Apply as a wholesaler, store, picker or partner</h2>
-            <p className="muted" style={{ margin: 0, maxWidth: '60ch' }}>
-              One form, one reference. Every application is delivered to our operations line on WhatsApp
-              {applyLine ? <strong> {applyLine}</strong> : ' for human verification'} — no automatic
-              approvals.
-            </p>
-          </div>
-          <Link className="btn accent" href={applyHref}>
-            Start an application
-          </Link>
-        </div>
-      </section>
-
-      {version && (
-        <section style={{ marginTop: 'var(--space-6)' }}>
-          <div className="card tight">
-            <div className="spread">
-              <span className="small muted">
-                API base path <span className="mono">{version.apiBasePath}</span> · worker{' '}
-                {version.features?.worker ? 'enabled' : 'disabled'} · storage{' '}
-                {String(version.features?.storage ?? '—')}
-              </span>
-              <span className="small muted">
-                Interactive API reference is available at{' '}
-                <a href="/api/v1/../.." className="mono" style={{ pointerEvents: 'none' }}>
-                  the API origin
-                </a>{' '}
-                <span className="faint">/docs (non-production)</span>
-              </span>
+      {stockedRail.length > 0 && (
+        <section className="mk-section">
+          <div className="section-head">
+            <div>
+              <h2>Stocked by several suppliers</h2>
+              <p className="sub">Compare verified wholesalers on the same line</p>
             </div>
+            <Link className="see-all" href="/catalog">
+              Full catalogue <ChevronRight size={14} />
+            </Link>
+          </div>
+          <div className="rail">
+            {stockedRail.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
           </div>
         </section>
       )}
-    </>
+
+      {newest.length > 0 && (
+        <section className="mk-section">
+          <div className="section-head">
+            <div>
+              <h2>New in the catalogue</h2>
+              <p className="sub">Recently published by verified wholesalers</p>
+            </div>
+            <Link className="see-all" href="/catalog?sort=created_desc">
+              See new arrivals <ChevronRight size={14} />
+            </Link>
+          </div>
+          <div className="rail">
+            {newest.slice(0, 10).map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <RecentlyOrderedRail />
+
+      <section className="mk-section" style={{ marginBottom: 'var(--space-lg)' }}>
+        <div className="section-head">
+          <div>
+            <h2>Why pharmacies order on BEZZO</h2>
+          </div>
+        </div>
+        <div className="trust-grid">
+          <div className="trust-card">
+            <span className="tc-icon">
+              <ShieldIcon size={20} />
+            </span>
+            <div>
+              <div className="tc-title">Verified on both sides</div>
+              <p className="tc-body">
+                Every wholesaler is licence-checked before a single unit is sellable, and only verified
+                medical stores can place orders.
+              </p>
+            </div>
+          </div>
+          <div className="trust-card">
+            <span className="tc-icon">
+              <HubIcon size={20} />
+            </span>
+            <div>
+              <div className="tc-title">One order, audited stages</div>
+              <p className="tc-body">
+                A picker collects from each supplier, every package is scanned into the Bezzo hub, and
+                discrepancies stay visible — never a vague “processing”.
+              </p>
+            </div>
+          </div>
+          <div className="trust-card">
+            <span className="tc-icon">
+              <TruckIcon size={20} />
+            </span>
+            <div>
+              <div className="tc-title">Prices you can act on</div>
+              <p className="tc-body">
+                Trade prices, stock and batch details are re-read from live supplier inventory on every
+                request — no stale offers, no surprise invoices.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

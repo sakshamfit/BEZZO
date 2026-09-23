@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-20** (Phase 6 payments completed; see §2).
+Last updated: **2026-09-20** (marketplace UX transformation of the web client; see §8).
 
 ---
 
@@ -264,3 +264,54 @@ exactly that.
   Mono, 8-pt grid, 1 px slate borders, status chips led by a 6 px dot). Light-first; dark mode is
   deliberately not implemented.
 - `docs/02-implementation-status.md` is updated with every slice, including the evidence that proves it.
+
+---
+
+## 8. Marketplace UX transformation (2026-09-20, branch `arena/01a0bf2e-bezzo`)
+
+The web client now has the quick-commerce-grade retailer experience (design-system v2 in
+`apps/web/src/app/globals.css`, all new primitives under `apps/web/src/components/`). Key facts a
+fresh session must know:
+
+- **Visual identity unchanged in hue** (navy `#0A2156` / teal `#00BFA5`), re-laid-out for density and
+  speed. Nothing is borrowed from any competitor: product/category imagery is BEZZO's own
+  deterministic inline-SVG system, so there are zero image requests and no placeholder photos of
+  medicines.
+- **Route groups**: console/auth/apply pages live in `apps/web/src/app/(shell)/` (URLs unchanged)
+  and get the standard container from `(shell)/layout.tsx`. Marketplace pages (`/`, `/catalog`,
+  `/categories`, `/cart`, `/checkout`, `/orders`, `/picker`, `/admin`) render their own containers.
+  Do not reintroduce a container in `AppShell`.
+- **Cart contract**: `POST /cart/items` takes `supplierProductId` (the listing id) — NOT `listingId`.
+  The preview mock now mirrors the real body and the real `/catalog/products` envelope
+  (`{ items, pagination }`); the old mock returned a bare array and silently broke the old catalogue
+  page in preview.
+- **Server-authoritative optimism**: quick-add shows a pending stepper, then reconciles with the
+  API's cart response; failures roll back with a toast. Money/stock are never computed client-side.
+- **Order tracking** maps the real fulfilment enum ladder (CREATED→…→DELIVERED) to a visual track
+  from the server's own timestamps. Do not fake progress for missing stages.
+- **Picker surface is honest**: `/picker` shows a real empty state because picker dispatch (Phase 7)
+  has no backend yet. When Phase 7 ships, replace the empty state with the task flow — do not
+  simulate scans in the meantime.
+- **Preview fixtures** live in `src/lib/mock-service.ts` (20 products, supplier fulfilment queue,
+  recomputed category counts). They are preview-only; the real API is the contract.
+- **The mock is a complete mini-backend** (2026-09-20 completeness pass): every `request(...)`
+  endpoint the UI calls is handled — auth register/OTP (preview code `123456`), order cancel +
+  refunds, payment retry/refund/mock-webhook with real state, supplier fulfilment
+  accept/pack/ready/reject with `INVALID_TRANSITION` 409s, listing create/patch, inventory
+  adjust/set + ledger, admin application summary/triage, notification inbox + preferences,
+  address/session mutations, and `POST /applications` (apply form → admin queue). The
+  catch-all returns a **404 `NOT_IMPLEMENTED_IN_PREVIEW`** — never reintroduce a fake-success
+  catch-all; silent `{}` responses are what made console buttons look broken.
+- Mock state is in-memory: dev-server restart resets fixtures (useful after demo mutations).
+- Verified: typecheck green, 24 routes 200 on `next dev`, cart/quote/search flows exercised through
+  the app's own route handlers.
+- **Storefront v3 (2026-09-21, Blinkit-pattern)**: search = full-round grey pill (focus → white +
+  teal ring); header cart = teal pill with count chip (outline when empty); category tiles =
+  circles (`.ct-visual` clipped 50%); home promo-rail of 3 honest USP banners; product-card foot =
+  price column + compact ADD pill that wraps on narrow cards; catalog desktop sidebar
+  (`.catalog-layout`/`.cat-side`, toolbar's category select hidden ≥900px via `.ct-cat-field`);
+  cart "Bill details" card (`.bill-card`, dashed rows); bottom-nav active = teal pill. **No
+  strikethrough MRP / discount chips on summary cards — the real `/catalog/products` API has no
+  MRP field, so none is invented** (MRP appears per-offer on product detail where the API has it).
+  Sandbox restarts wipe node_modules + kill the dev server: re-run `npm install`, restart preview.
+
