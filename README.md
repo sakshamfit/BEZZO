@@ -2,6 +2,7 @@
 
 B2B pharmaceutical marketplace — verified wholesalers and suppliers connected to verified medical-store
 buyers, with picker-based supplier → Bezzo-hub collection and a separate hub → retailer delivery stage.
+The repository includes a Flutter buyer-app prototype in `apps/mobile` with an illustrative sealed-box catalog.
 
 | Document | What it is |
 | --- | --- |

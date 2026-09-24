@@ -38,8 +38,10 @@ pgdata/
 
 # mobile
 .expo/
-apps/mobile/android/
 apps/mobile/ios/
+apps/mobile/macos/
+apps/mobile/linux/
+apps/mobile/windows/
 
 # generated
 docs/api/openapi.json

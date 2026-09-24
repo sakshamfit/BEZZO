@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-20** (Phase 6 payments completed; see §2).
+Last updated: **2026-09-24** (Flutter buyer prototype added; see §2).
 
 ---
 
@@ -40,7 +40,7 @@ working source of truth for the visual language.
 
 ## 2. Where the work stands
 
-**Branch** `arena/01a0bd9d-bezzo`. **PR:** https://github.com/sakshamfit/BEZZO/pull/1 (base `main`).
+**Branch** `main`. **PR #1** (web app + payments) is merged into `main`.
 History: `781d1a9` (specs uploaded) → `dd0835c` → `6f9a628` → `d38b108` (foundation → identity →
 catalogue/inventory → cart → checkout/orders) → `845c3c4` (web app + Phase 6 payments + authorization
 fix + integration tests + reservation commitment; see the commit body for the history reconciliation).
@@ -51,13 +51,20 @@ fix + integration tests + reservation commitment; see the commit body for the hi
 | 2 Identity & onboarding | IMPLEMENTED (push delivery REQUIRES EXTERNAL CREDENTIALS) |
 | 3 Catalogue & inventory | IMPLEMENTED |
 | 4 Marketplace: cart, checkout, orders | IMPLEMENTED |
-| 5 Fulfilment (supplier accept → pack → ready) | **NOT IMPLEMENTED — next slice** |
+| 5 Fulfilment (supplier accept → pack → ready) | IMPLEMENTED (API + supplier workspace + integration coverage) |
 | 6 Payments (webhooks, capture, retry, refunds, reconciliation) | IMPLEMENTED (§2.2) |
 | 7 Picker system | NOT IMPLEMENTED |
 | 8 Delivery / Porter | NOT IMPLEMENTED (adapter exists) |
 | 9 Admin/backoffice | PARTIALLY IMPLEMENTED: partner-application queue + payments backoffice |
 | 10 Scale & hardening | NOT IMPLEMENTED |
 | — Public partner intake → WhatsApp +918604683669 | IMPLEMENTED (automated delivery from Bezzo's own number REQUIRES EXTERNAL CREDENTIALS) |
+
+**Flutter buyer app (`apps/mobile`)**: a Flutter/Dart prototype has the retailer shop, search and
+category filters, sealed-box demo products, MOQ-sized cart, demo checkout, and local order history.
+Its `lib/` code is split into shared core, catalog, cart, and marketplace presentation modules. Cart
+and catalog data are in memory only: it does not authenticate, call the API, or submit real orders.
+`flutter analyze --no-pub` is clean; web and Android debug builds succeed. The next mobile slice is API
+integration and secure token storage.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 
@@ -226,25 +233,21 @@ exactly that.
 
 ## 6. Next work, in order
 
-1. **Phase 5 — supplier fulfilment** (the immediate next slice): `GET /suppliers/orders`, accept, pack,
-   mark ready-for-pickup, package/shipment records. Fulfilment tables and per-supplier fulfilments exist.
-   This is the precondition for the picker stage. Non-negotiables: server-authoritative transitions,
-   idempotent commands, audit + domain events, supplier data isolation, and tests for the scenarios in
-   §6 (below).
-2. **Phase 7 — picker system**: pickup offer generation, **atomic claim** (two pickers must never claim
+1. **Phase 7 — picker system**: supplier fulfillment accept/pack/ready flows are implemented. Next:
+   pickup offer generation, **atomic claim** (two pickers must never claim
    one task), run/stop progression, package scans with `local_event_id` idempotency, hub receiving with
    duplicate/unexpected/discrepancy handling.
-3. **Phase 8 — delivery**: provider adapter call sites only (no Porter logic scattered in the app).
-4. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
+2. **Phase 8 — delivery**: provider adapter call sites only (no Porter logic scattered in the app).
+3. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, missing/unexpected
    package, hub discrepancy. (Duplicate payment webhook, forged signature, refunds, RBAC and reservation
    commitment are covered today.)
-5. Promotions: the spec exists
+4. Promotions: the spec exists
    (`Bezzo_promotions_pricing_discounts_marketplace_commercial_rules_spec_v1.0.md`) and nothing is
    implemented — the cart pricing path has no promotion hook. Read it first; do not invent rules.
-6. Supplier fulfilment web screen + operations dashboard tiles (buyer flow and payments backoffice are
+5. Picker app + operations dashboard tiles (buyer flow and payments backoffice are
    done).
-7. When credentials exist: Razorpay checkout handoff in the web client (the API already creates the
+6. When credentials exist: Razorpay checkout handoff in the web client (the API already creates the
    intent), Porter live mode, FCM/APNs, WhatsApp Cloud API sender, self-hosted webfonts.
 
 ---

@@ -1,7 +1,7 @@
 # BEZZO — implementation status (living memory)
 
-**Last updated:** 2026-09-20
-**Branch:** `arena/01a0bd9d-bezzo`
+**Last updated:** 2026-09-24
+**Branch:** `main`
 **Purpose:** this file is the project's memory. It records *what actually exists in code*, how it was
 verified, what is deliberately absent, and what comes next. It is updated at the end of every work
 session. Nothing here is aspirational: an item appears under **IMPLEMENTED** only when the code exists
@@ -19,7 +19,8 @@ Status vocabulary (as required by the brief):
 BEZZO/
 ├── apps/
 │   ├── api/        NestJS 11 + Fastify — versioned REST API, workers, OpenAPI
-│   └── web/        Next.js 15 + React 19 — buyer storefront, supplier workspace, ops screens
+│   ├── web/        Next.js 15 + React 19 — buyer storefront, supplier workspace, ops screens
+│   └── mobile/     Flutter/Dart — buyer prototype; core, catalog, cart, and presentation modules
 ├── packages/
 │   ├── contracts/  framework-free domain vocabulary (enums, events, errors, DTOs, state machines)
 │   ├── config/     zod-validated environment + .env discovery
@@ -56,7 +57,7 @@ fulfilled — closes the unpaid order with it (see §5.2).
 | 2 | Identity & onboarding: auth, sessions, RBAC, buyer/supplier profiles, verification, documents | **IMPLEMENTED** (mobile OTP flows exist API-side; push delivery **REQUIRES EXTERNAL CREDENTIALS**) |
 | 3 | Catalogue & inventory: products, categories, manufacturers, listings, inventory + ledger | **IMPLEMENTED** |
 | 4 | Marketplace: cart, checkout, orders, payments | Cart + quote + order placement + cancellation + reservation commitment/expiry **IMPLEMENTED** (web `/cart`, `/checkout`, `/orders`, `/orders/[orderId]`); payment capture, webhooks, retry and refunds **IMPLEMENTED** (Phase 6 below) |
-| 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | Fulfillment records are created per supplier at order placement; supplier accept/pack/ready flows **NOT IMPLEMENTED** |
+| 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | Supplier fulfillment list/detail, accept/reject, pack and ready-for-pickup are **IMPLEMENTED** (API, web workspace, integration coverage); picker pickup remains Phase 7 |
 | 6 | Payments: abstraction, server verification, webhooks, reconciliation | **IMPLEMENTED** end to end: provider abstraction (mock + razorpay; cashfree adapter **NOT IMPLEMENTED**), signed webhook intake with evidence + replay protection, capture → order confirmation, buyer retry, admin full/partial refunds, reconciliation poll, buyer payment UI and `/admin/payments` backoffice. Live-gateway checkout UI and settlement payouts **REQUIRES EXTERNAL CREDENTIALS** / later phase |
 | 7 | Picker system: offers, atomic claim, runs, stops, package scans, hub receiving | **NOT IMPLEMENTED** (schema for the full flow is migrated) |
 | 8 | Delivery: hub → retailer, Porter adapter, slots, tracking | Logistics adapter **IMPLEMENTED**; delivery flow **NOT IMPLEMENTED** |
@@ -87,7 +88,8 @@ fulfilled — closes the unpaid order with it (see §5.2).
 
 Domain enums and state machines, ~70 domain-event names with envelopes, ~140 stable error codes with
 HTTP mappings, DTOs for identity/marketplace/picker/admin, operational configuration. This package is
-the single vocabulary shared by the API, the web client and (later) the mobile apps.
+the single vocabulary shared by the API and web client; the Flutter prototype uses local demo data
+and still needs API integration.
 
 ### 4.3 API
 
@@ -428,10 +430,10 @@ inventory violates `reserved_quantity <= available_quantity`.
 | Partner-application outbound WhatsApp (Bezzo's own business number) | REQUIRES EXTERNAL CREDENTIALS | Today the applicant's WhatsApp sends the prefilled message; `delivery_channel` is `WHATSAPP_HANDOFF`. A WhatsApp Cloud API token + verified sender would let the platform deliver it directly (`delivery_channel = API`). |
 | Self-hosted webfonts | REQUIRES CONFIGURATION | The root layout loads Plus Jakarta Sans / Space Mono from the Google Fonts CDN with a system-font fallback; the sandbox cannot reach that CDN. Self-hosting is a two-file change (`public/fonts` + `@font-face`) and is preferred for production. |
 | Payment webhook endpoint + reconciliation | IMPLEMENTED | `POST /api/v1/webhooks/payments/:provider` verifies the HMAC over the raw bytes, stores the call as evidence before interpreting it, deduplicates on `(gateway, external_event_id)` and applies one shared transition; `payments.reconcile` polls the provider every 60 s for anything the webhook never delivered. |
-| Fulfilment / pickup / hub receiving / delivery flows | NOT IMPLEMENTED | Phase 5–8. All tables are migrated; the atomic claim SQL is documented in the engineering specs. |
+| Picker pickup / hub receiving / delivery flows | NOT IMPLEMENTED | Phases 7–8. Supplier fulfillment accept/pack/ready is implemented; picker claiming, hub package receipt and retailer delivery are not. |
 | Admin & backoffice (verification queues, disputes, settlements) | NOT IMPLEMENTED | Phase 9. |
 | Analytics & reporting, promotions (`0014_promotions.sql`) | NOT IMPLEMENTED | Promotions migration is planned but not written; do not invent promotion rules without the spec. |
-| Mobile apps (`apps/mobile`) | NOT IMPLEMENTED | React Native client is a later phase; the API is already platform-agnostic (`X-Client-Platform`). |
+| Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer prototype has a feature-based `lib/` structure, search, categories, sealed-box demo catalog, MOQ-aware cart, demo checkout, and local order history. Analyzer and web/Android debug builds succeed. It is not connected to the API; authentication, live pricing/stock, persisted orders, secure token storage, and release configuration remain to be built. |
 | Test suites | PARTIALLY IMPLEMENTED | `pnpm --filter @bezzo/api test:integration` runs 21 black-box tests against a booted API (RBAC negative matrix, payments critical scenarios, reservation commitment) — 21/21 green and mutation-checked. Unit, contract, load, mobile and the remaining concurrency scenarios are still **NOT IMPLEMENTED**. |
 | Redis / OpenSearch / S3 in this environment | REQUIRES CONFIGURATION | Fallbacks are intentional and reported by `/health`; production must set `REDIS_URL`, `SEARCH_ENABLED=true`, storage credentials. |
 | Razorpay / Porter live keys | REQUIRES EXTERNAL CREDENTIALS | Boot refuses to start Razorpay without credentials rather than silently degrading. |
@@ -440,23 +442,23 @@ inventory violates `reserved_quantity <= available_quantity`.
 
 ## 7. Next steps (in order)
 
-1. Phase 5 — supplier fulfilment: accept, pack, mark ready, and the package/shipment records the picker
-   stage will claim (the fulfilment tables and per-supplier fulfilments already exist).
-2. Picker slice (Phase 7): offer generation, atomic claim, run/stop progression, package scans with
+1. Picker slice (Phase 7): offer generation, atomic claim, run/stop progression, package scans with
    `local_event_id` idempotency, hub receiving with duplicate/unexpected handling.
-3. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
+2. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, hub discrepancy.
    (Duplicate payment webhook, forged signature, refunds, RBAC and reservation commitment are covered.)
-4. Promotions: the promotion rules from `Bezzo_promotions_pricing_discounts_marketplace_commercial_rules_spec_v1.0.md`
+3. Promotions: the promotion rules from `Bezzo_promotions_pricing_discounts_marketplace_commercial_rules_spec_v1.0.md`
    are **NOT IMPLEMENTED** — the cart/checkout pricing path has no promotion hook yet, and inventing rules
    without the spec is not acceptable. Read the spec, then migrate + implement + test.
-5. Web parity for the remaining phases (supplier fulfilment screen, picker app, operations dashboard
+4. Web parity for the remaining phases (picker app, operations dashboard
    tiles) — the buyer purchase flow (`/cart`, `/checkout`, `/orders`, `/orders/[orderId]`, payments) and
    the payments backoffice are done.
-6. Partner intake follow-ups: attach uploaded licence documents to an application, convert an approved
+5. Partner intake follow-ups: attach uploaded licence documents to an application, convert an approved
    application into a supplier/buyer invite, and an operations dashboard tile for `awaitingReview`.
-7. Live gateway work when credentials exist: Razorpay checkout handoff in the web client (the API already
+6. Live gateway work when credentials exist: Razorpay checkout handoff in the web client (the API already
    creates the intent), webhook secret rotation, and settlement/payout reporting.
+7. Flutter buyer app: connect sign-in, catalog/search, cart quote, order placement, and order history to
+   the existing API; add secure token storage and environment-specific Android/iOS configuration.
 
 ## 8. Verification commands used
 
