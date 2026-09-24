@@ -433,7 +433,7 @@ inventory violates `reserved_quantity <= available_quantity`.
 | Picker pickup / hub receiving / delivery flows | NOT IMPLEMENTED | Phases 7–8. Supplier fulfillment accept/pack/ready is implemented; picker claiming, hub package receipt and retailer delivery are not. |
 | Admin & backoffice (verification queues, disputes, settlements) | NOT IMPLEMENTED | Phase 9. |
 | Analytics & reporting, promotions (`0014_promotions.sql`) | NOT IMPLEMENTED | Promotions migration is planned but not written; do not invent promotion rules without the spec. |
-| Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer client now has API-backed password/OTP sign-in, Keystore/Keychain session storage, `/me` restoration, shared refresh-on-401, live catalog/category search, per-supplier offers, server cart, scheduled delivery quote, COD order placement, and order history. Buyer profile/onboarding, compliance documents, order detail/cancellation, online payment handoff, push notifications, release signing configuration, and device-matrix verification remain. |
+| Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer client has API-backed password/OTP sign-in, secure session storage, `/me` restoration, shared refresh-on-401, live catalog/category search, per-supplier offers, server cart, scheduled delivery quote, COD order placement, order history, order details, supplier fulfilments, delivery/payment/timeline details, and server-validated cancellation. Buyer profile/onboarding, compliance documents, online payment handoff, push notifications, release signing configuration, and device-matrix verification remain. Flutter analyze and Android debug APK build pass; production signing/API configuration remains required. |
 | Test suites | PARTIALLY IMPLEMENTED | `pnpm --filter @bezzo/api test:integration` runs 21 black-box tests against a booted API (RBAC negative matrix, payments critical scenarios, reservation commitment) — 21/21 green and mutation-checked. Unit, contract, load, mobile and the remaining concurrency scenarios are still **NOT IMPLEMENTED**. |
 | Redis / OpenSearch / S3 in this environment | REQUIRES CONFIGURATION | Fallbacks are intentional and reported by `/health`; production must set `REDIS_URL`, `SEARCH_ENABLED=true`, storage credentials. |
 | Razorpay / Porter live keys | REQUIRES EXTERNAL CREDENTIALS | Boot refuses to start Razorpay without credentials rather than silently degrading. |
@@ -457,9 +457,9 @@ inventory violates `reserved_quantity <= available_quantity`.
    application into a supplier/buyer invite, and an operations dashboard tile for `awaitingReview`.
 6. Live gateway work when credentials exist: Razorpay checkout handoff in the web client (the API already
    creates the intent), webhook secret rotation, and settlement/payout reporting.
-7. Flutter buyer app: connect buyer onboarding/profile, document upload, order detail/cancellation,
-   and online payment handoff; then add lifecycle/deep-link behavior, release signing, and device-matrix
-   verification.
+7. Flutter buyer app: connect buyer onboarding/profile, document upload, and online payment handoff;
+   then add lifecycle/deep-link behavior, release signing, and device-matrix verification. Order
+   detail/cancellation is API-connected.
 
 ## 8. Verification commands used
 

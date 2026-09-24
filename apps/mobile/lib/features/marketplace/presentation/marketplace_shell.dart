@@ -12,6 +12,7 @@ import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/domain/medicine.dart';
 import '../../checkout/data/checkout_repository.dart';
 import '../../checkout/presentation/checkout_page.dart';
+import '../../checkout/presentation/order_detail_page.dart';
 import 'widgets/empty_state.dart';
 import 'widgets/product_card.dart';
 
@@ -1017,6 +1018,15 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     color: navy,
+                  ),
+                ),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => OrderDetailPage(
+                      repository: widget.checkout,
+                      orderId: order.id,
+                      onChanged: _loadOrders,
+                    ),
                   ),
                 ),
               ),

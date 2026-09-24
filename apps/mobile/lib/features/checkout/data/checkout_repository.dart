@@ -197,6 +197,21 @@ class CheckoutRepository {
     OrderSummary.fromApi,
   );
 
+  Future<Map<String, dynamic>> orderDetail(String orderId) =>
+      _api.get('orders/$orderId');
+
+  Future<Map<String, dynamic>> cancelOrder({
+    required String orderId,
+    required String idempotencyKey,
+    String? reason,
+  }) => _api.post(
+    'orders/$orderId/cancel',
+    body: {
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    },
+    idempotencyKey: idempotencyKey,
+  );
+
   static List<T> _list<T>(
     Map<String, dynamic> data,
     T Function(Map<String, dynamic>) parse,

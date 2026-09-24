@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-24** (Flutter buyer prototype added; see §2).
+Last updated: **2026-09-24** (Flutter buyer API flow expanded; see §2).
 
 ---
 
@@ -65,10 +65,11 @@ history. Its `lib/` code is split into shared core, catalog, cart, checkout, aut
 presentation modules.
 Password/OTP sign-in, secure session storage, `/me` session restoration, one shared refresh operation,
 logout, supplier offers, live cart, server quote, COD order placement, and order history are API-backed.
-Online payment methods, order detail/cancellation, compliance-document upload, and push notifications
-remain to build. Set
-`BEZZO_API_BASE_URL` at build time for non-emulator environments; release builds require HTTPS. The next
-mobile slice is buyer profile/onboarding and the remaining operational workflows.
+Order details show supplier fulfilments, delivery address, payment and timeline; cancellation is routed
+through the server's guarded/idempotent endpoint. Flutter analyze and a debug APK build pass. Online
+payment handoff, buyer profile/onboarding, compliance-document upload, and push notifications remain
+to build. Set `BEZZO_API_BASE_URL` at build time for non-emulator environments; release builds require
+HTTPS and upload signing credentials. The next mobile slice is buyer profile/onboarding and documents.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 
