@@ -1,20 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../../core/errors/api_exception.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../cart/application/cart_store.dart';
 import '../../cart/presentation/cart_page.dart';
-import '../../catalog/data/demo_catalog.dart';
+import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/domain/medicine.dart';
 import 'widgets/empty_state.dart';
 import 'widgets/product_card.dart';
 
 class MarketplaceShell extends StatefulWidget {
-  const MarketplaceShell({super.key, required this.store, required this.auth});
+  const MarketplaceShell({
+    super.key,
+    required this.store,
+    required this.auth,
+    required this.catalog,
+  });
 
   final CartStore store;
   final AuthController auth;
+  final CatalogRepository catalog;
 
   @override
   State<MarketplaceShell> createState() => _MarketplaceShellState();
@@ -22,16 +31,98 @@ class MarketplaceShell extends StatefulWidget {
 
 class _MarketplaceShellState extends State<MarketplaceShell> {
   int tab = 0;
-  String category = categories.first;
+  List<CatalogCategory> categories = const [];
+  List<Medicine> products = const [];
+  String? categoryId;
   String query = '';
+  String? catalogError;
+  bool catalogLoading = true;
+  int _catalogRequest = 0;
+  Timer? _searchDebounce;
 
-  List<Medicine> get visibleProducts => demoMedicines.where((product) {
-    final matchesCategory =
-        category == categories.first || product.category == category;
-    final haystack = '${product.name} ${product.generic} ${product.category}'
-        .toLowerCase();
-    return matchesCategory && haystack.contains(query.toLowerCase());
-  }).toList();
+  List<Medicine> get visibleProducts => products;
+
+  String get selectedCategoryName {
+    for (final item in categories) {
+      if (item.id == categoryId) return item.name;
+    }
+    return 'Medicine boxes';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCatalog());
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadCatalog() async {
+    setState(() {
+      catalogLoading = true;
+      catalogError = null;
+    });
+    try {
+      final loadedCategories = await widget.catalog.categories();
+      if (!mounted) return;
+      setState(() => categories = loadedCategories);
+      await _loadProducts(showSpinner: false);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        catalogError = error.message;
+        catalogLoading = false;
+      });
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        catalogError = error.message;
+        catalogLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadProducts({bool showSpinner = true}) async {
+    final request = ++_catalogRequest;
+    if (showSpinner && mounted) setState(() => catalogLoading = true);
+    try {
+      final results = await widget.catalog.search(
+        query: query,
+        categoryId: categoryId,
+      );
+      if (!mounted || request != _catalogRequest) return;
+      setState(() {
+        products = results;
+        catalogLoading = false;
+        catalogError = null;
+      });
+    } on ApiException catch (error) {
+      if (!mounted || request != _catalogRequest) return;
+      setState(() {
+        catalogError = error.message;
+        catalogLoading = false;
+      });
+    } on FormatException catch (error) {
+      if (!mounted || request != _catalogRequest) return;
+      setState(() {
+        catalogError = error.message;
+        catalogLoading = false;
+      });
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    query = value;
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _loadProducts(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +192,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
       SliverToBoxAdapter(
         child: _sectionTitle(
           'Wholesale medicine boxes',
-          'MOQ shown on every item',
+          'Compare verified suppliers',
         ),
       ),
       SliverPadding(
@@ -114,11 +205,37 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
             crossAxisSpacing: 12,
             mainAxisExtent: 314,
           ),
-          itemBuilder: (context, index) =>
-              ProductCard(product: visibleProducts[index], store: widget.store),
+          itemBuilder: (context, index) => ProductCard(
+            product: visibleProducts[index],
+            store: widget.store,
+            onViewOffers: _showOffers,
+          ),
         ),
       ),
-      if (visibleProducts.isEmpty)
+      if (catalogLoading && visibleProducts.isEmpty)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      if (catalogError != null)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Text(catalogError!, textAlign: TextAlign.center),
+                TextButton.icon(
+                  onPressed: _loadCatalog,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry catalog'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      if (visibleProducts.isEmpty && !catalogLoading && catalogError == null)
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.all(32),
@@ -129,7 +246,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         child: Padding(
           padding: EdgeInsets.fromLTRB(18, 0, 18, 22),
           child: Text(
-            'Demo storefront · All prices and availability are illustrative.',
+            'Live catalogue and stock · Demo basket and checkout.',
             style: TextStyle(color: muted, fontSize: 12),
             textAlign: TextAlign.center,
           ),
@@ -221,7 +338,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         ),
         const SizedBox(height: 12),
         TextField(
-          onChanged: (value) => setState(() => query = value.trim()),
+          onChanged: _onSearchChanged,
           decoration: InputDecoration(
             hintText: 'Search medicines, generics, brands',
             prefixIcon: const Icon(Icons.search_rounded, color: muted),
@@ -340,18 +457,20 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     child: ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       scrollDirection: Axis.horizontal,
-      itemCount: categories.length - 1,
+      itemCount: categories.length,
       separatorBuilder: (_, _) => const SizedBox(width: 10),
-      itemBuilder: (context, index) => _categoryTile(categories[index + 1]),
+      itemBuilder: (context, index) => _categoryTile(categories[index]),
     ),
   );
 
-  Widget _categoryTile(String name) {
-    final selected = category == name;
-    final count = demoMedicines.where((item) => item.category == name).length;
+  Widget _categoryTile(CatalogCategory category) {
+    final selected = categoryId == category.id;
+    final name = category.name;
     return InkWell(
-      onTap: () =>
-          setState(() => category = selected ? categories.first : name),
+      onTap: () {
+        setState(() => categoryId = selected ? null : category.id);
+        unawaited(_loadProducts());
+      },
       borderRadius: BorderRadius.circular(15),
       child: Container(
         width: 91,
@@ -389,7 +508,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               ),
             ),
             Text(
-              '$count products',
+              '${category.count} products',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: muted, fontSize: 8),
@@ -459,6 +578,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         child: ProductCard(
           product: visibleProducts[index],
           store: widget.store,
+          onViewOffers: _showOffers,
         ),
       ),
     ),
@@ -539,16 +659,49 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         child: _sectionTitle(
           'Shop by category',
           'Reset',
-          onTap: () => setState(() => category = categories.first),
+          onTap: () {
+            setState(() => categoryId = null);
+            unawaited(_loadProducts());
+          },
         ),
       ),
       SliverToBoxAdapter(child: _categoryRail()),
       SliverToBoxAdapter(
         child: _sectionTitle(
-          category == categories.first ? 'All medicine boxes' : category,
+          categoryId == null ? 'All medicine boxes' : selectedCategoryName,
           '${visibleProducts.length} products',
         ),
       ),
+      if (catalogLoading && visibleProducts.isEmpty)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      if (catalogError != null)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Text(catalogError!, textAlign: TextAlign.center),
+                TextButton.icon(
+                  onPressed: _loadCatalog,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry catalog'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      if (visibleProducts.isEmpty && !catalogLoading && catalogError == null)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: Text('No medicine boxes match this view.')),
+          ),
+        ),
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(14, 0, 14, 24),
         sliver: SliverGrid.builder(
@@ -559,12 +712,148 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
             crossAxisSpacing: 11,
             mainAxisExtent: 314,
           ),
-          itemBuilder: (context, index) =>
-              ProductCard(product: visibleProducts[index], store: widget.store),
+          itemBuilder: (context, index) => ProductCard(
+            product: visibleProducts[index],
+            store: widget.store,
+            onViewOffers: _showOffers,
+          ),
         ),
       ),
     ],
   );
+
+  Future<void> _showOffers(Medicine product) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: .62,
+        minChildSize: .4,
+        maxChildSize: .9,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF6F8F5),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: widget.catalog.productDetails(product.id),
+            builder: (context, snapshot) {
+              final offers = snapshot.data?['offers'];
+              return ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD1D8D2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    product.name,
+                    style: const TextStyle(
+                      color: navy,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${product.generic} · ${product.strength}',
+                    style: const TextStyle(color: muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 18),
+                  if (snapshot.connectionState != ConnectionState.done)
+                    const Padding(
+                      padding: EdgeInsets.all(28),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (snapshot.hasError)
+                    Text(
+                      snapshot.error is ApiException
+                          ? (snapshot.error as ApiException).message
+                          : 'Offers could not be loaded. Try again.',
+                      textAlign: TextAlign.center,
+                    )
+                  else if (offers is! List || offers.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 28),
+                      child: Text(
+                        'No eligible sealed-box offers are available for this product.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: muted),
+                      ),
+                    )
+                  else ...[
+                    const Text(
+                      'VERIFIED WHOLESALE OFFERS',
+                      style: TextStyle(
+                        color: muted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...offers.whereType<Map<String, dynamic>>().map((offer) {
+                      final price = offer['sellingPrice'];
+                      final moq = offer['minimumOrderQuantity'];
+                      final stock = offer['sellableQuantity'];
+                      final city = offer['supplierCity'];
+                      return Card(
+                        color: Colors.white,
+                        margin: const EdgeInsets.only(bottom: 9),
+                        child: ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFE8F5F1),
+                            child: Icon(Icons.verified_rounded, color: teal),
+                          ),
+                          title: Text(
+                            (offer['supplierName'] as String?) ??
+                                'Verified supplier',
+                            style: const TextStyle(
+                              color: navy,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${city is String && city.isNotEmpty ? '$city · ' : ''}'
+                            'MOQ ${moq is num ? moq : '—'} boxes · '
+                            '${stock is num ? stock : '—'} boxes available',
+                          ),
+                          trailing: Text(
+                            price is num ? money(price.round()) : '—',
+                            style: const TextStyle(
+                              color: navy,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          isThreeLine: true,
+                        ),
+                      );
+                    }),
+                  ],
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Prices and box availability are live. Basket ordering is being connected next.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted, fontSize: 11),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _orders() => AnimatedBuilder(
     animation: widget.store,

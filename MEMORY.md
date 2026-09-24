@@ -63,9 +63,10 @@ fix + integration tests + reservation commitment; see the commit body for the hi
 category filters, sealed-box demo products, MOQ-sized cart, demo checkout, and local order history.
 Its `lib/` code is split into shared core, catalog, cart, auth, and marketplace presentation modules.
 Password/OTP sign-in, secure session storage, `/me` session restoration, one shared refresh operation,
-and logout are API-backed. Catalog, cart, and orders remain local demo data. Set
+logout, live catalog/category search, and supplier offer details are API-backed. Cart, checkout, and
+orders remain local demo flows. Set
 `BEZZO_API_BASE_URL` at build time for non-emulator environments; release builds require HTTPS. The next
-mobile slice is buyer onboarding/profile and live catalog/search integration.
+mobile slice is live cart/checkout/order history and buyer onboarding/profile.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 

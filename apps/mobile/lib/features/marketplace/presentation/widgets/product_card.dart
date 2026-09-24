@@ -7,9 +7,15 @@ import '../../../catalog/domain/medicine.dart';
 import 'box_art.dart';
 
 class ProductCard extends StatelessWidget {
-  const ProductCard({super.key, required this.product, required this.store});
+  const ProductCard({
+    super.key,
+    required this.product,
+    required this.store,
+    this.onViewOffers,
+  });
   final Medicine product;
   final CartStore store;
+  final ValueChanged<Medicine>? onViewOffers;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -97,7 +103,9 @@ class ProductCard extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(11, 4, 11, 0),
           child: Text(
-            'MOQ ${product.moq} boxes  ·  ${product.stockBoxes} boxes available',
+            product.isLive
+                ? '${product.supplierCount} offers · ${product.stockBoxes} boxes available'
+                : 'MOQ ${product.moq} boxes  ·  ${product.stockBoxes} boxes available',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: muted, fontSize: 8),
@@ -108,7 +116,9 @@ class ProductCard extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                '${money(product.price)} / box',
+                product.price > 0
+                    ? '${product.isLive ? 'From ' : ''}${money(product.price)} / box'
+                    : 'Price on offer',
                 style: const TextStyle(
                   color: navy,
                   fontSize: 14,
@@ -116,14 +126,15 @@ class ProductCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Text(
-                'MRP ${money(product.mrp)}',
-                style: const TextStyle(
-                  color: muted,
-                  fontSize: 9,
-                  decoration: TextDecoration.lineThrough,
+              if (!product.isLive)
+                Text(
+                  'MRP ${money(product.mrp)}',
+                  style: const TextStyle(
+                    color: muted,
+                    fontSize: 9,
+                    decoration: TextDecoration.lineThrough,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -133,6 +144,29 @@ class ProductCard extends StatelessWidget {
           child: AnimatedBuilder(
             animation: store,
             builder: (context, _) {
+              if (product.isLive) {
+                return SizedBox(
+                  height: 36,
+                  width: double.infinity,
+                  child: FilledButton.tonal(
+                    onPressed: onViewOffers == null
+                        ? null
+                        : () => onViewOffers!(product),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFE8F5F1),
+                      foregroundColor: navy,
+                      padding: EdgeInsets.zero,
+                    ),
+                    child: const Text(
+                      'VIEW WHOLESALE OFFERS',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                );
+              }
               final quantity = store.boxesFor(product);
               if (quantity == 0) {
                 return SizedBox(

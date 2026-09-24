@@ -26,10 +26,7 @@ class OtpChallenge {
 }
 
 class AuthRepository {
-  AuthRepository({
-    required this.api,
-    required this.store,
-  });
+  AuthRepository({required this.api, required this.store});
 
   final BezzoApiClient api;
   final SecureSessionStore store;
@@ -106,11 +103,7 @@ class AuthRepository {
 
     try {
       await api
-          .postWithSession(
-            'auth/logout',
-            session: session,
-            body: const {},
-          )
+          .postWithSession('auth/logout', session: session, body: const {})
           .timeout(const Duration(seconds: 4));
     } catch (_) {
       // Local sign-out must complete even when the API cannot be reached.

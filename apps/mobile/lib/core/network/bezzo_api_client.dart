@@ -37,6 +37,11 @@ class BezzoApiClient {
   Future<Map<String, dynamic>> get(String path) =>
       _request('GET', path, authenticated: true);
 
+  Future<Map<String, dynamic>> getPublic(
+    String path, {
+    Map<String, String> query = const {},
+  }) => _request('GET', path, authenticated: false, query: query);
+
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? body,
@@ -70,6 +75,7 @@ class BezzoApiClient {
     Map<String, dynamic>? body,
     required bool authenticated,
     String? idempotencyKey,
+    Map<String, String> query = const {},
   }) async {
     final initialSession = authenticated ? await sessionStore.read() : null;
     if (authenticated && initialSession == null) {
@@ -83,6 +89,7 @@ class BezzoApiClient {
     var response = await _send(
       method,
       path,
+      query: query,
       body: body,
       session: initialSession,
       idempotencyKey: idempotencyKey,
@@ -109,8 +116,12 @@ class BezzoApiClient {
     Map<String, dynamic>? body,
     AuthSession? session,
     String? idempotencyKey,
+    Map<String, String> query = const {},
   }) async {
-    final request = http.Request(method, config.endpoint(path))
+    final uri = config
+        .endpoint(path)
+        .replace(queryParameters: query.isEmpty ? null : query);
+    final request = http.Request(method, uri)
       ..headers.addAll({
         'Accept': 'application/json',
         'X-Client-Platform': _clientPlatform,
@@ -235,6 +246,7 @@ class BezzoApiClient {
     final data = decoded['data'];
     if (data == null) return {};
     if (data is Map<String, dynamic>) return data;
+    if (data is List) return {'items': data};
     throw const ApiException(
       statusCode: 502,
       code: 'INVALID_SERVER_RESPONSE',

@@ -32,4 +32,4 @@ missing; never commit the keystore or those values.
 - `features/auth/` contains password/OTP sign-in, session handling, and authentication UI.
 - `features/marketplace/presentation/` contains the storefront, product cards, and box artwork.
 
-Authentication uses the BEZZO API. Session credentials are stored through platform secure storage, restored against `/me`, refreshed after an API 401, and revoked on sign-out. The current catalog, prices, stock, cart, and order history are still illustrative local demo data; checkout does not send orders to the BEZZO API or suppliers. Catalog quantities represent sealed medicine boxes, and cart additions follow each product’s minimum order quantity.
+Authentication and catalog browsing use the BEZZO API. Catalog search, categories, stock summaries, and per-supplier offers are live; the UI displays medicine as sealed boxes and shows MOQ per offer. Session credentials are stored through platform secure storage, restored against `/me`, refreshed after an API 401, and revoked on sign-out. The basket, checkout, and order history are still local demo flows and do not submit orders to the API or suppliers.
