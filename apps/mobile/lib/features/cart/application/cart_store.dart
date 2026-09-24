@@ -1,56 +1,97 @@
 import 'package:flutter/foundation.dart';
 
-import '../../catalog/data/demo_catalog.dart';
-import '../../catalog/domain/medicine.dart';
-import '../domain/demo_order.dart';
+import '../../../core/errors/api_exception.dart';
+import '../data/cart_repository.dart';
+import '../domain/cart_snapshot.dart';
 
 class CartStore extends ChangeNotifier {
-  final Map<String, int> _boxes = {};
-  final List<DemoOrder> orders = [];
+  CartStore(this._repository);
 
-  int boxesFor(Medicine product) => _boxes[product.id] ?? 0;
-  int get totalBoxes => _boxes.values.fold(0, (sum, boxes) => sum + boxes);
-  int get total =>
-      demoMedicines.fold(0, (sum, item) => sum + item.price * boxesFor(item));
-  List<Medicine> get products =>
-      demoMedicines.where((item) => boxesFor(item) > 0).toList();
+  final CartRepository _repository;
+  CartSnapshot? snapshot;
+  bool loading = true;
+  bool mutating = false;
+  String? error;
+  int _generation = 0;
+  final Map<String, String> _pendingAddKeys = {};
 
-  void add(Medicine product) {
-    final next = boxesFor(product) + product.moq;
-    if (next > product.stockBoxes) return;
-    _boxes[product.id] = next;
+  List<CartLine> get products => snapshot?.items ?? const [];
+  int get totalBoxes => snapshot?.unitCount ?? 0;
+  num get total => snapshot?.estimatedTotal ?? 0;
+
+  Future<void> load() async {
+    final generation = ++_generation;
+    loading = true;
+    error = null;
     notifyListeners();
-  }
-
-  void removeOneMoq(Medicine product) {
-    final next = boxesFor(product) - product.moq;
-    if (next <= 0) {
-      _boxes.remove(product.id);
-    } else {
-      _boxes[product.id] = next;
+    try {
+      final result = await _repository.load();
+      if (generation == _generation) snapshot = result;
+    } on ApiException catch (exception) {
+      if (generation == _generation) error = exception.message;
+    } on FormatException catch (exception) {
+      if (generation == _generation) error = exception.message;
+    } finally {
+      if (generation == _generation) {
+        loading = false;
+        notifyListeners();
+      }
     }
-    notifyListeners();
   }
 
-  void placeOrder() {
-    if (_boxes.isEmpty) return;
-    orders.insert(
-      0,
-      DemoOrder(
-        number:
-            'BZ-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-        items: totalBoxes,
-        total: total,
-        time: DateTime.now(),
+  Future<void> addOffer({
+    required String supplierProductId,
+    required int quantity,
+  }) async {
+    final key = _pendingAddKeys.putIfAbsent(
+      supplierProductId,
+      _repository.newIdempotencyKey,
+    );
+    await _mutate(
+      () => _repository.addOffer(
+        supplierProductId: supplierProductId,
+        quantity: quantity,
+        idempotencyKey: key,
       ),
     );
-    _boxes.clear();
+    if (error == null) _pendingAddKeys.remove(supplierProductId);
+  }
+
+  Future<void> setQuantity(CartLine line, int quantity) => _mutate(
+    () => _repository.setQuantity(itemId: line.id, quantity: quantity),
+  );
+
+  Future<void> remove(CartLine line) =>
+      _mutate(() => _repository.remove(line.id));
+
+  Future<void> _mutate(Future<CartSnapshot> Function() action) async {
+    if (mutating) return;
+    final generation = _generation;
+    mutating = true;
+    error = null;
     notifyListeners();
+    try {
+      final result = await action();
+      if (generation == _generation) snapshot = result;
+    } on ApiException catch (exception) {
+      if (generation == _generation) error = exception.message;
+    } on FormatException catch (exception) {
+      if (generation == _generation) error = exception.message;
+    } finally {
+      if (generation == _generation) {
+        mutating = false;
+        notifyListeners();
+      }
+    }
   }
 
   void clear() {
-    _boxes.clear();
-    orders.clear();
+    _generation++;
+    _pendingAddKeys.clear();
+    snapshot = null;
+    error = null;
+    loading = false;
+    mutating = false;
     notifyListeners();
   }
 }

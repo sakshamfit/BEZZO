@@ -53,7 +53,7 @@ class BoxArt extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    compact ? 'BZ' : 'BEZZO DEMO',
+                    compact ? 'BZ' : 'SEALED BOX',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: compact ? 4 : 6,

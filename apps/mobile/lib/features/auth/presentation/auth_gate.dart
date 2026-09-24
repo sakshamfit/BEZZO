@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../cart/application/cart_store.dart';
 import '../../catalog/data/catalog_repository.dart';
+import '../../checkout/data/checkout_repository.dart';
 import '../../marketplace/presentation/marketplace_shell.dart';
 import '../application/auth_controller.dart';
 import 'sign_in_screen.dart';
@@ -13,11 +14,13 @@ class AuthGate extends StatelessWidget {
     required this.auth,
     required this.cartStore,
     required this.catalog,
+    required this.checkout,
   });
 
   final AuthController auth;
   final CartStore cartStore;
   final CatalogRepository catalog;
+  final CheckoutRepository checkout;
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -34,6 +37,7 @@ class AuthGate extends StatelessWidget {
           store: cartStore,
           auth: auth,
           catalog: catalog,
+          checkout: checkout,
         ),
         AuthStatus.signedIn => _UnsupportedRoleScreen(
           onSignOut: () async {

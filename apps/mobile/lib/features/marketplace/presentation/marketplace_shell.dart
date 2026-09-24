@@ -10,6 +10,8 @@ import '../../cart/application/cart_store.dart';
 import '../../cart/presentation/cart_page.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../catalog/domain/medicine.dart';
+import '../../checkout/data/checkout_repository.dart';
+import '../../checkout/presentation/checkout_page.dart';
 import 'widgets/empty_state.dart';
 import 'widgets/product_card.dart';
 
@@ -19,11 +21,13 @@ class MarketplaceShell extends StatefulWidget {
     required this.store,
     required this.auth,
     required this.catalog,
+    required this.checkout,
   });
 
   final CartStore store;
   final AuthController auth;
   final CatalogRepository catalog;
+  final CheckoutRepository checkout;
 
   @override
   State<MarketplaceShell> createState() => _MarketplaceShellState();
@@ -37,6 +41,9 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
   String query = '';
   String? catalogError;
   bool catalogLoading = true;
+  List<OrderSummary> orders = const [];
+  bool ordersLoading = true;
+  String? ordersError;
   int _catalogRequest = 0;
   Timer? _searchDebounce;
 
@@ -53,6 +60,8 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
   void initState() {
     super.initState();
     unawaited(_loadCatalog());
+    unawaited(widget.store.load());
+    unawaited(_loadOrders());
   }
 
   @override
@@ -122,6 +131,27 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
       const Duration(milliseconds: 350),
       () => _loadProducts(),
     );
+  }
+
+  Future<void> _loadOrders() async {
+    setState(() {
+      ordersLoading = true;
+      ordersError = null;
+    });
+    try {
+      final result = await widget.checkout.orders();
+      if (!mounted) return;
+      setState(() {
+        orders = result;
+        ordersLoading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        ordersError = error.message;
+        ordersLoading = false;
+      });
+    }
   }
 
   @override
@@ -207,7 +237,6 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
           ),
           itemBuilder: (context, index) => ProductCard(
             product: visibleProducts[index],
-            store: widget.store,
             onViewOffers: _showOffers,
           ),
         ),
@@ -246,7 +275,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         child: Padding(
           padding: EdgeInsets.fromLTRB(18, 0, 18, 22),
           child: Text(
-            'Live catalogue and stock · Demo basket and checkout.',
+            'Live catalogue · Server cart · Scheduled COD orders.',
             style: TextStyle(color: muted, fontSize: 12),
             textAlign: TextAlign.center,
           ),
@@ -303,22 +332,19 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         ),
         const SizedBox(height: 6),
         InkWell(
-          onTap: () => _info(
-            'Delivery location',
-            'Demo delivery address: Sector 56, Gurugram.',
-          ),
+          onTap: _openCheckout,
           child: Row(
             children: [
               const Icon(Icons.location_on_rounded, size: 18, color: navy),
               const SizedBox(width: 4),
               const Text(
-                'Delivering to',
+                'Delivery address',
                 style: TextStyle(color: navy, fontSize: 11),
               ),
               const SizedBox(width: 5),
               const Expanded(
                 child: Text(
-                  'Sector 56, Gurugram',
+                  'Choose your pharmacy address',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -577,7 +603,6 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         width: 204,
         child: ProductCard(
           product: visibleProducts[index],
-          store: widget.store,
           onViewOffers: _showOffers,
         ),
       ),
@@ -714,7 +739,6 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
           ),
           itemBuilder: (context, index) => ProductCard(
             product: visibleProducts[index],
-            store: widget.store,
             onViewOffers: _showOffers,
           ),
         ),
@@ -807,6 +831,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                       final moq = offer['minimumOrderQuantity'];
                       final stock = offer['sellableQuantity'];
                       final city = offer['supplierCity'];
+                      final listingId = offer['listingId'];
                       return Card(
                         color: Colors.white,
                         margin: const EdgeInsets.only(bottom: 9),
@@ -828,12 +853,32 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                             'MOQ ${moq is num ? moq : '—'} boxes · '
                             '${stock is num ? stock : '—'} boxes available',
                           ),
-                          trailing: Text(
-                            price is num ? money(price.round()) : '—',
-                            style: const TextStyle(
-                              color: navy,
-                              fontWeight: FontWeight.w900,
-                            ),
+                          trailing: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                price is num ? money(price) : '—',
+                                style: const TextStyle(
+                                  color: navy,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              IconButton.filledTonal(
+                                tooltip: 'Add MOQ to basket',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: listingId is String && moq is num
+                                    ? () => _addOffer(
+                                        listingId,
+                                        moq.toInt(),
+                                        context,
+                                      )
+                                    : null,
+                                icon: const Icon(
+                                  Icons.add_shopping_cart_rounded,
+                                  size: 18,
+                                ),
+                              ),
+                            ],
                           ),
                           isThreeLine: true,
                         ),
@@ -842,7 +887,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                   ],
                   const SizedBox(height: 12),
                   const Text(
-                    'Prices and box availability are live. Basket ordering is being connected next.',
+                    'Live supplier prices and inventory · MOQ shown on each offer.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: muted, fontSize: 11),
                   ),
@@ -855,69 +900,130 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     );
   }
 
-  Widget _orders() => AnimatedBuilder(
-    animation: widget.store,
-    builder: (context, _) {
-      final orders = widget.store.orders;
-      return CustomScrollView(
-        slivers: [
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(18, 18, 18, 16),
-              child: Text(
-                'Your orders',
-                style: TextStyle(
-                  fontSize: 23,
-                  fontWeight: FontWeight.w800,
-                  color: ink,
+  Future<void> _addOffer(
+    String listingId,
+    int minimumOrderQuantity,
+    BuildContext sheetContext,
+  ) async {
+    if (widget.store.mutating) return;
+    await widget.store.addOffer(
+      supplierProductId: listingId,
+      quantity: minimumOrderQuantity,
+    );
+    if (!mounted || !sheetContext.mounted) return;
+    final error = widget.store.error;
+    if (error == null) {
+      Navigator.pop(sheetContext);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Added MOQ of $minimumOrderQuantity sealed boxes to your basket.',
+            ),
+          ),
+        );
+    } else {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  Widget _orders() => CustomScrollView(
+    slivers: [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 12, 16),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Your orders',
+                  style: TextStyle(
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                    color: ink,
+                  ),
                 ),
+              ),
+              IconButton(
+                tooltip: 'Refresh orders',
+                onPressed: _loadOrders,
+                icon: const Icon(Icons.refresh_rounded, color: navy),
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (ordersLoading && orders.isEmpty)
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      if (ordersError != null)
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(ordersError!, textAlign: TextAlign.center),
+                  TextButton.icon(
+                    onPressed: _loadOrders,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry'),
+                  ),
+                ],
               ),
             ),
           ),
-          if (orders.isEmpty)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: EmptyState(
-                icon: Icons.receipt_long_outlined,
-                title: 'No orders yet',
-                message: 'Your demo orders will appear here after checkout.',
-              ),
-            ),
-          if (orders.isNotEmpty)
-            SliverList.builder(
-              itemCount: orders.length,
-              itemBuilder: (context, index) {
-                final order = orders[index];
-                return Card(
-                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  color: Colors.white,
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Color(0xFFE8F5F1),
-                      child: Icon(Icons.inventory_2_outlined, color: teal),
-                    ),
-                    title: Text(
-                      'Order ${order.number}',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    subtitle: Text(
-                      '${order.items} boxes · ${order.status}\n${order.time.toLocal().toString().substring(0, 16)}',
-                    ),
-                    isThreeLine: true,
-                    trailing: Text(
-                      money(order.total),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: navy,
-                      ),
-                    ),
+        ),
+      if (!ordersLoading && ordersError == null && orders.isEmpty)
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyState(
+            icon: Icons.receipt_long_outlined,
+            title: 'No orders yet',
+            message: 'Confirmed wholesale orders will appear here.',
+          ),
+        ),
+      if (orders.isNotEmpty)
+        SliverList.builder(
+          itemCount: orders.length,
+          itemBuilder: (context, index) {
+            final order = orders[index];
+            return Card(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              color: Colors.white,
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE8F5F1),
+                  child: Icon(Icons.inventory_2_outlined, color: teal),
+                ),
+                title: Text(
+                  'Order ${order.orderNumber}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(
+                  '${order.unitCount} boxes · ${order.status.replaceAll('_', ' ')}\n'
+                  '${order.placedAt.toLocal().toString().substring(0, 16)} · ${order.paymentStatus.replaceAll('_', ' ')}',
+                ),
+                isThreeLine: true,
+                trailing: Text(
+                  money(order.grandTotal),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: navy,
                   ),
-                );
-              },
-            ),
-        ],
-      );
-    },
+                ),
+              ),
+            );
+          },
+        ),
+    ],
   );
 
   Widget _account() {
@@ -971,7 +1077,8 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         _accountTile(
           Icons.location_on_outlined,
           'Delivery addresses',
-          'Connect a verified pharmacy address',
+          'Add or choose an address for an order',
+          onTap: _openCheckout,
         ),
         _accountTile(
           Icons.description_outlined,
@@ -985,7 +1092,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         ),
         const SizedBox(height: 22),
         const Text(
-          'Prototype account · no real medicine orders are submitted.',
+          'Wholesale orders use live BEZZO prices and availability.',
           style: TextStyle(color: muted, fontSize: 12),
           textAlign: TextAlign.center,
         ),
@@ -1005,20 +1112,47 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     );
   }
 
-  Widget _accountTile(IconData icon, String title, String subtitle) => Card(
+  Widget _accountTile(
+    IconData icon,
+    String title,
+    String subtitle, {
+    VoidCallback? onTap,
+  }) => Card(
     color: Colors.white,
     child: ListTile(
       leading: Icon(icon, color: navy),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
       subtitle: Text(subtitle),
       trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: () => _info(title, subtitle),
+      onTap: onTap ?? () => _info(title, subtitle),
     ),
   );
 
-  void _openCart() => Navigator.of(
-    context,
-  ).push(MaterialPageRoute(builder: (_) => CartPage(store: widget.store)));
+  void _openCart() => Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => CartPage(
+        store: widget.store,
+        checkout: widget.checkout,
+        onOrderPlaced: () {
+          unawaited(_loadOrders());
+          if (mounted) setState(() => tab = 2);
+        },
+      ),
+    ),
+  );
+
+  void _openCheckout() => Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => CheckoutPage(
+        repository: widget.checkout,
+        cartStore: widget.store,
+        onOrderPlaced: () {
+          unawaited(_loadOrders());
+          if (mounted) setState(() => tab = 2);
+        },
+      ),
+    ),
+  );
   void _info(String title, String message) => showDialog<void>(
     context: context,
     builder: (_) => AlertDialog(

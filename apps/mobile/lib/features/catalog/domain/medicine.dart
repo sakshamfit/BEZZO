@@ -6,13 +6,10 @@ class Medicine {
     required this.strength,
     required this.category,
     required this.price,
-    required this.mrp,
-    required this.moq,
     required this.stockBoxes,
     required this.supplier,
     required this.tint,
     this.categoryId,
-    this.isLive = false,
     this.supplierCount = 1,
   });
 
@@ -48,13 +45,10 @@ class Medicine {
       ].join(' · '),
       category: categoryName,
       price: price,
-      mrp: 0,
-      moq: 0,
       stockBoxes: sellableQuantity,
       supplier: '$supplierCount verified suppliers',
       tint: _tintFor(id),
       categoryId: categoryId,
-      isLive: true,
       supplierCount: supplierCount,
     );
   }
@@ -65,13 +59,10 @@ class Medicine {
   final String strength;
   final String category;
   final int price;
-  final int mrp;
-  final int moq;
   final int stockBoxes;
   final String supplier;
   final int tint;
   final String? categoryId;
-  final bool isLive;
   final int supplierCount;
 
   static String _requiredString(Map<String, dynamic> data, String key) {

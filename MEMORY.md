@@ -59,14 +59,16 @@ fix + integration tests + reservation commitment; see the commit body for the hi
 | 10 Scale & hardening | NOT IMPLEMENTED |
 | — Public partner intake → WhatsApp +918604683669 | IMPLEMENTED (automated delivery from Bezzo's own number REQUIRES EXTERNAL CREDENTIALS) |
 
-**Flutter buyer app (`apps/mobile`)**: a Flutter/Dart prototype has the retailer shop, search and
-category filters, sealed-box demo products, MOQ-sized cart, demo checkout, and local order history.
-Its `lib/` code is split into shared core, catalog, cart, auth, and marketplace presentation modules.
+**Flutter buyer app (`apps/mobile`)**: the Flutter/Dart client has the retailer shop, live search and
+categories, sealed-box product cards, MOQ-aware server cart, scheduled COD checkout, and API order
+history. Its `lib/` code is split into shared core, catalog, cart, checkout, auth, and marketplace
+presentation modules.
 Password/OTP sign-in, secure session storage, `/me` session restoration, one shared refresh operation,
-logout, live catalog/category search, and supplier offer details are API-backed. Cart, checkout, and
-orders remain local demo flows. Set
+logout, supplier offers, live cart, server quote, COD order placement, and order history are API-backed.
+Online payment methods, order detail/cancellation, compliance-document upload, and push notifications
+remain to build. Set
 `BEZZO_API_BASE_URL` at build time for non-emulator environments; release builds require HTTPS. The next
-mobile slice is live cart/checkout/order history and buyer onboarding/profile.
+mobile slice is buyer profile/onboarding and the remaining operational workflows.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 

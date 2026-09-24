@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
-import '../../../cart/application/cart_store.dart';
 import '../../../catalog/domain/medicine.dart';
 import 'box_art.dart';
 
@@ -10,12 +9,10 @@ class ProductCard extends StatelessWidget {
   const ProductCard({
     super.key,
     required this.product,
-    required this.store,
-    this.onViewOffers,
+    required this.onViewOffers,
   });
   final Medicine product;
-  final CartStore store;
-  final ValueChanged<Medicine>? onViewOffers;
+  final ValueChanged<Medicine> onViewOffers;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -103,9 +100,7 @@ class ProductCard extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(11, 4, 11, 0),
           child: Text(
-            product.isLive
-                ? '${product.supplierCount} offers · ${product.stockBoxes} boxes available'
-                : 'MOQ ${product.moq} boxes  ·  ${product.stockBoxes} boxes available',
+            '${product.supplierCount} offers · ${product.stockBoxes} boxes available',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: muted, fontSize: 8),
@@ -117,7 +112,7 @@ class ProductCard extends StatelessWidget {
             children: [
               Text(
                 product.price > 0
-                    ? '${product.isLive ? 'From ' : ''}${money(product.price)} / box'
+                    ? 'From ${money(product.price)} / box'
                     : 'Price on offer',
                 style: const TextStyle(
                   color: navy,
@@ -126,113 +121,30 @@ class ProductCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (!product.isLive)
-                Text(
-                  'MRP ${money(product.mrp)}',
-                  style: const TextStyle(
-                    color: muted,
-                    fontSize: 9,
-                    decoration: TextDecoration.lineThrough,
-                  ),
-                ),
             ],
           ),
         ),
         const Spacer(),
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 5, 10, 10),
-          child: AnimatedBuilder(
-            animation: store,
-            builder: (context, _) {
-              if (product.isLive) {
-                return SizedBox(
-                  height: 36,
-                  width: double.infinity,
-                  child: FilledButton.tonal(
-                    onPressed: onViewOffers == null
-                        ? null
-                        : () => onViewOffers!(product),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFE8F5F1),
-                      foregroundColor: navy,
-                      padding: EdgeInsets.zero,
-                    ),
-                    child: const Text(
-                      'VIEW WHOLESALE OFFERS',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                );
-              }
-              final quantity = store.boxesFor(product);
-              if (quantity == 0) {
-                return SizedBox(
-                  height: 36,
-                  width: double.infinity,
-                  child: FilledButton.tonal(
-                    onPressed: () => store.add(product),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFE8F5F1),
-                      foregroundColor: navy,
-                      padding: EdgeInsets.zero,
-                    ),
-                    child: Text(
-                      'ADD  ·  MOQ ${product.moq} boxes',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                );
-              }
-              final maxBoxes =
-                  (product.stockBoxes ~/ product.moq) * product.moq;
-              final canAdd = quantity + product.moq <= maxBoxes;
-              return Container(
-                height: 36,
-                decoration: BoxDecoration(
-                  color: navy,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _smallIcon(Icons.remove, () => store.removeOneMoq(product)),
-                    Text(
-                      '$quantity boxes',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    _smallIcon(
-                      Icons.add,
-                      canAdd ? () => store.add(product) : null,
-                    ),
-                  ],
-                ),
-              );
-            },
+          child: SizedBox(
+            height: 36,
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: () => onViewOffers(product),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE8F5F1),
+                foregroundColor: navy,
+                padding: EdgeInsets.zero,
+              ),
+              child: const Text(
+                'VIEW WHOLESALE OFFERS',
+                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900),
+              ),
+            ),
           ),
         ),
       ],
-    ),
-  );
-
-  Widget _smallIcon(IconData icon, VoidCallback? onTap) => InkWell(
-    onTap: onTap,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      child: Icon(
-        icon,
-        color: onTap == null ? Colors.white54 : Colors.white,
-        size: 17,
-      ),
     ),
   );
 }

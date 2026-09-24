@@ -34,8 +34,10 @@ class BezzoApiClient {
 
   String get clientPlatform => _clientPlatform;
 
-  Future<Map<String, dynamic>> get(String path) =>
-      _request('GET', path, authenticated: true);
+  Future<Map<String, dynamic>> get(
+    String path, {
+    Map<String, String> query = const {},
+  }) => _request('GET', path, authenticated: true, query: query);
 
   Future<Map<String, dynamic>> getPublic(
     String path, {
@@ -59,6 +61,11 @@ class BezzoApiClient {
     String path, {
     required Map<String, dynamic> body,
   }) => _request('PATCH', path, body: body, authenticated: true);
+
+  Future<Map<String, dynamic>> delete(String path) =>
+      _request('DELETE', path, authenticated: true);
+
+  String newIdempotencyKey() => _requestId();
 
   Future<Map<String, dynamic>> postWithSession(
     String path, {

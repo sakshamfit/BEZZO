@@ -25,11 +25,12 @@ missing; never commit the keystore or those values.
 
 `lib/` keeps startup and app configuration separate from feature code:
 
-- `app.dart` wires the app theme and the marketplace screen.
+- `app.dart` wires startup, API configuration and feature repositories.
 - `core/` contains shared colors and money formatting.
-- `features/catalog/` contains the medicine model and illustrative demo catalog.
-- `features/cart/` contains cart/order state and the cart screen.
+- `features/catalog/` contains live catalog and category API models.
+- `features/cart/` contains the server-backed cart and basket screen.
 - `features/auth/` contains password/OTP sign-in, session handling, and authentication UI.
+- `features/checkout/` contains delivery addresses, live quotes, COD order placement, and order models.
 - `features/marketplace/presentation/` contains the storefront, product cards, and box artwork.
 
-Authentication and catalog browsing use the BEZZO API. Catalog search, categories, stock summaries, and per-supplier offers are live; the UI displays medicine as sealed boxes and shows MOQ per offer. Session credentials are stored through platform secure storage, restored against `/me`, refreshed after an API 401, and revoked on sign-out. The basket, checkout, and order history are still local demo flows and do not submit orders to the API or suppliers.
+Authentication, catalog browsing, supplier offers, cart, delivery quote, COD checkout, and order history use the BEZZO API. The UI presents quantities as sealed medicine boxes and applies each supplier offer's MOQ. Session credentials use platform secure storage, restore against `/me`, refresh after an API 401, and are revoked on sign-out. Online payment methods, order detail/cancellation, buyer compliance-document upload, push notifications, and production signing/release automation are not yet connected in this Flutter client.

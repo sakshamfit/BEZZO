@@ -8,7 +8,9 @@ import 'core/network/bezzo_api_client.dart';
 import 'core/storage/secure_session_store.dart';
 import 'core/theme/app_colors.dart';
 import 'features/cart/application/cart_store.dart';
+import 'features/cart/data/cart_repository.dart';
 import 'features/catalog/data/catalog_repository.dart';
+import 'features/checkout/data/checkout_repository.dart';
 import 'features/auth/application/auth_controller.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/auth/presentation/auth_gate.dart';
@@ -21,7 +23,7 @@ class BezzoApp extends StatefulWidget {
 }
 
 class _BezzoAppState extends State<BezzoApp> {
-  final _cartStore = CartStore();
+  late final _cartStore = CartStore(CartRepository(_apiClient));
   late final SecureSessionStore _sessionStore = PlatformSecureSessionStore(
     const FlutterSecureStorage(),
   );
@@ -30,6 +32,9 @@ class _BezzoAppState extends State<BezzoApp> {
     sessionStore: _sessionStore,
   );
   late final CatalogRepository _catalogRepository = CatalogRepository(
+    _apiClient,
+  );
+  late final CheckoutRepository _checkoutRepository = CheckoutRepository(
     _apiClient,
   );
   late final AuthController _authController = AuthController(
@@ -71,6 +76,7 @@ class _BezzoAppState extends State<BezzoApp> {
         auth: _authController,
         cartStore: _cartStore,
         catalog: _catalogRepository,
+        checkout: _checkoutRepository,
       ),
     );
   }
