@@ -61,10 +61,11 @@ fix + integration tests + reservation commitment; see the commit body for the hi
 
 **Flutter buyer app (`apps/mobile`)**: a Flutter/Dart prototype has the retailer shop, search and
 category filters, sealed-box demo products, MOQ-sized cart, demo checkout, and local order history.
-Its `lib/` code is split into shared core, catalog, cart, and marketplace presentation modules. Cart
-and catalog data are in memory only: it does not authenticate, call the API, or submit real orders.
-`flutter analyze --no-pub` is clean; web and Android debug builds succeed. The next mobile slice is API
-integration and secure token storage.
+Its `lib/` code is split into shared core, catalog, cart, auth, and marketplace presentation modules.
+Password/OTP sign-in, secure session storage, `/me` session restoration, one shared refresh operation,
+and logout are API-backed. Catalog, cart, and orders remain local demo data. Set
+`BEZZO_API_BASE_URL` at build time for non-emulator environments; release builds require HTTPS. The next
+mobile slice is buyer onboarding/profile and live catalog/search integration.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 

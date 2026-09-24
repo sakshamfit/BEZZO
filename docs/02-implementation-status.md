@@ -433,7 +433,7 @@ inventory violates `reserved_quantity <= available_quantity`.
 | Picker pickup / hub receiving / delivery flows | NOT IMPLEMENTED | Phases 7–8. Supplier fulfillment accept/pack/ready is implemented; picker claiming, hub package receipt and retailer delivery are not. |
 | Admin & backoffice (verification queues, disputes, settlements) | NOT IMPLEMENTED | Phase 9. |
 | Analytics & reporting, promotions (`0014_promotions.sql`) | NOT IMPLEMENTED | Promotions migration is planned but not written; do not invent promotion rules without the spec. |
-| Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer prototype has a feature-based `lib/` structure, search, categories, sealed-box demo catalog, MOQ-aware cart, demo checkout, and local order history. Analyzer and web/Android debug builds succeed. It is not connected to the API; authentication, live pricing/stock, persisted orders, secure token storage, and release configuration remain to be built. |
+| Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer app now has API-backed password/OTP sign-in, Keystore/Keychain session storage, `/me` restoration, shared refresh-on-401, local sign-out, and a feature-based `lib/` structure. Catalog, prices, stock, cart, and order history are still demo data; buyer profile/onboarding, live commerce APIs, payment handoff, and production signing/release automation remain. |
 | Test suites | PARTIALLY IMPLEMENTED | `pnpm --filter @bezzo/api test:integration` runs 21 black-box tests against a booted API (RBAC negative matrix, payments critical scenarios, reservation commitment) — 21/21 green and mutation-checked. Unit, contract, load, mobile and the remaining concurrency scenarios are still **NOT IMPLEMENTED**. |
 | Redis / OpenSearch / S3 in this environment | REQUIRES CONFIGURATION | Fallbacks are intentional and reported by `/health`; production must set `REDIS_URL`, `SEARCH_ENABLED=true`, storage credentials. |
 | Razorpay / Porter live keys | REQUIRES EXTERNAL CREDENTIALS | Boot refuses to start Razorpay without credentials rather than silently degrading. |
@@ -457,8 +457,9 @@ inventory violates `reserved_quantity <= available_quantity`.
    application into a supplier/buyer invite, and an operations dashboard tile for `awaitingReview`.
 6. Live gateway work when credentials exist: Razorpay checkout handoff in the web client (the API already
    creates the intent), webhook secret rotation, and settlement/payout reporting.
-7. Flutter buyer app: connect sign-in, catalog/search, cart quote, order placement, and order history to
-   the existing API; add secure token storage and environment-specific Android/iOS configuration.
+7. Flutter buyer app: connect buyer onboarding/profile, catalog/search, cart quote, order placement, and
+   order history to the existing API; then add payment handoff, lifecycle/deep-link behavior, release
+   signing, and device-matrix verification.
 
 ## 8. Verification commands used
 

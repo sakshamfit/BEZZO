@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../auth/application/auth_controller.dart';
 import '../../cart/application/cart_store.dart';
 import '../../cart/presentation/cart_page.dart';
 import '../../catalog/data/demo_catalog.dart';
@@ -10,8 +11,10 @@ import 'widgets/empty_state.dart';
 import 'widgets/product_card.dart';
 
 class MarketplaceShell extends StatefulWidget {
-  const MarketplaceShell({super.key, required this.store});
+  const MarketplaceShell({super.key, required this.store, required this.auth});
+
   final CartStore store;
+  final AuthController auth;
 
   @override
   State<MarketplaceShell> createState() => _MarketplaceShellState();
@@ -628,61 +631,90 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     },
   );
 
-  Widget _account() => ListView(
-    padding: const EdgeInsets.all(18),
-    children: [
-      const Text(
-        'Business account',
-        style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: ink),
-      ),
-      const SizedBox(height: 4),
-      const Text(
-        'Your retailer profile and buying tools',
-        style: TextStyle(color: muted),
-      ),
-      const SizedBox(height: 20),
-      Card(
-        color: Colors.white,
-        child: ListTile(
-          leading: const CircleAvatar(
-            backgroundColor: Color(0xFFE8F5F1),
-            child: Icon(Icons.store_mall_directory_outlined, color: teal),
+  Widget _account() {
+    final principal = widget.auth.session?.principal ?? const {};
+    final buyer = principal['buyer'];
+    final organization = principal['organization'];
+    final accountName = organization is Map && organization['name'] is String
+        ? organization['name'] as String
+        : (principal['displayName'] as String?) ?? 'Pharmacy account';
+    final accountContact =
+        (principal['email'] as String?) ??
+        (principal['phone'] as String?) ??
+        'Business contact';
+    final buyerStatus = buyer is Map && buyer['status'] is String
+        ? buyer['status'] as String
+        : 'Profile not set up';
+
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: [
+        const Text(
+          'Business account',
+          style: TextStyle(
+            fontSize: 23,
+            fontWeight: FontWeight.w800,
+            color: ink,
           ),
-          title: const Text(
-            'Green Cross Medical',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          subtitle: const Text(
-            'Retail pharmacy · Gurugram\nVerification: approved (demo)',
-          ),
-          isThreeLine: true,
-          trailing: const Icon(Icons.verified_rounded, color: teal),
         ),
-      ),
-      const SizedBox(height: 12),
-      _accountTile(
-        Icons.location_on_outlined,
-        'Delivery addresses',
-        'Sector 56, Gurugram',
-      ),
-      _accountTile(
-        Icons.description_outlined,
-        'Invoices & documents',
-        'Demo account documents',
-      ),
-      _accountTile(
-        Icons.support_agent_rounded,
-        'Help & support',
-        'Talk to the BEZZO team',
-      ),
-      const SizedBox(height: 22),
-      const Text(
-        'Prototype account · no real medicine orders are submitted.',
-        style: TextStyle(color: muted, fontSize: 12),
-        textAlign: TextAlign.center,
-      ),
-    ],
-  );
+        const SizedBox(height: 4),
+        const Text(
+          'Your retailer profile and buying tools',
+          style: TextStyle(color: muted),
+        ),
+        const SizedBox(height: 20),
+        Card(
+          color: Colors.white,
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: Color(0xFFE8F5F1),
+              child: Icon(Icons.store_mall_directory_outlined, color: teal),
+            ),
+            title: Text(
+              accountName,
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Text('$accountContact\nBuyer status: $buyerStatus'),
+            isThreeLine: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _accountTile(
+          Icons.location_on_outlined,
+          'Delivery addresses',
+          'Connect a verified pharmacy address',
+        ),
+        _accountTile(
+          Icons.description_outlined,
+          'Invoices & documents',
+          'Available after buyer profile setup',
+        ),
+        _accountTile(
+          Icons.support_agent_rounded,
+          'Help & support',
+          'Talk to the BEZZO team',
+        ),
+        const SizedBox(height: 22),
+        const Text(
+          'Prototype account · no real medicine orders are submitted.',
+          style: TextStyle(color: muted, fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 14),
+        Card(
+          color: Colors.white,
+          child: ListTile(
+            leading: const Icon(Icons.logout_rounded, color: navy),
+            title: const Text('Sign out'),
+            onTap: () async {
+              widget.store.clear();
+              await widget.auth.signOut();
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _accountTile(IconData icon, String title, String subtitle) => Card(
     color: Colors.white,

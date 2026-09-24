@@ -47,4 +47,10 @@ class CartStore extends ChangeNotifier {
     _boxes.clear();
     notifyListeners();
   }
+
+  void clear() {
+    _boxes.clear();
+    orders.clear();
+    notifyListeners();
+  }
 }
