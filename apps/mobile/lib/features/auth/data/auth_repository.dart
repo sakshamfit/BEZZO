@@ -31,6 +31,61 @@ class AuthRepository {
   final BezzoApiClient api;
   final SecureSessionStore store;
 
+  Future<void> registerBuyer({
+    required String displayName,
+    required String businessName,
+    required String identifier,
+    required String password,
+  }) async {
+    final contact = identifier.trim();
+    await api.post(
+      'auth/register',
+      authenticated: false,
+      body: {
+        'accountType': 'BUYER',
+        if (contact.contains('@')) 'email': contact,
+        if (!contact.contains('@')) 'phone': contact,
+        'displayName': displayName.trim(),
+        'businessName': businessName.trim(),
+        'password': password,
+        'clientPlatform': api.clientPlatform,
+        'acceptedTermsVersion': 'v1',
+      },
+    );
+  }
+
+  Future<OtpChallenge> requestVerificationCode(String identifier) async {
+    final purpose = identifier.trim().contains('@')
+        ? 'EMAIL_VERIFY'
+        : 'PHONE_VERIFY';
+    final data = await api.post(
+      'auth/otp/request',
+      authenticated: false,
+      body: {
+        'identifier': identifier.trim(),
+        'purpose': purpose,
+        'deviceType': api.clientPlatform,
+      },
+    );
+    return OtpChallenge.fromApi(data);
+  }
+
+  Future<void> verifyAccountCode({
+    required OtpChallenge challenge,
+    required String code,
+  }) async {
+    final data = await api.post(
+      'auth/otp/verify',
+      authenticated: false,
+      body: {'challengeId': challenge.id, 'code': code.trim()},
+    );
+    if (data['verified'] != true) {
+      throw const FormatException(
+        'The verification code could not be verified.',
+      );
+    }
+  }
+
   Future<AuthSession> signInWithPassword({
     required String identifier,
     required String password,

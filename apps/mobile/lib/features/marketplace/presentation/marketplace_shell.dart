@@ -6,6 +6,8 @@ import '../../../core/errors/api_exception.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../account/data/buyer_account_repository.dart';
+import '../../account/presentation/buyer_account_page.dart';
 import '../../cart/application/cart_store.dart';
 import '../../cart/presentation/cart_page.dart';
 import '../../catalog/data/catalog_repository.dart';
@@ -23,12 +25,14 @@ class MarketplaceShell extends StatefulWidget {
     required this.auth,
     required this.catalog,
     required this.checkout,
+    required this.buyerAccount,
   });
 
   final CartStore store;
   final AuthController auth;
   final CatalogRepository catalog;
   final CheckoutRepository checkout;
+  final BuyerAccountRepository buyerAccount;
 
   @override
   State<MarketplaceShell> createState() => _MarketplaceShellState();
@@ -1037,106 +1041,15 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
   );
 
   Widget _account() {
-    final principal = widget.auth.session?.principal ?? const {};
-    final buyer = principal['buyer'];
-    final organization = principal['organization'];
-    final accountName = organization is Map && organization['name'] is String
-        ? organization['name'] as String
-        : (principal['displayName'] as String?) ?? 'Pharmacy account';
-    final accountContact =
-        (principal['email'] as String?) ??
-        (principal['phone'] as String?) ??
-        'Business contact';
-    final buyerStatus = buyer is Map && buyer['status'] is String
-        ? buyer['status'] as String
-        : 'Profile not set up';
-
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: [
-        const Text(
-          'Business account',
-          style: TextStyle(
-            fontSize: 23,
-            fontWeight: FontWeight.w800,
-            color: ink,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Your retailer profile and buying tools',
-          style: TextStyle(color: muted),
-        ),
-        const SizedBox(height: 20),
-        Card(
-          color: Colors.white,
-          child: ListTile(
-            leading: const CircleAvatar(
-              backgroundColor: Color(0xFFE8F5F1),
-              child: Icon(Icons.store_mall_directory_outlined, color: teal),
-            ),
-            title: Text(
-              accountName,
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            subtitle: Text('$accountContact\nBuyer status: $buyerStatus'),
-            isThreeLine: true,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _accountTile(
-          Icons.location_on_outlined,
-          'Delivery addresses',
-          'Add or choose an address for an order',
-          onTap: _openCheckout,
-        ),
-        _accountTile(
-          Icons.description_outlined,
-          'Invoices & documents',
-          'Available after buyer profile setup',
-        ),
-        _accountTile(
-          Icons.support_agent_rounded,
-          'Help & support',
-          'Talk to the BEZZO team',
-        ),
-        const SizedBox(height: 22),
-        const Text(
-          'Wholesale orders use live BEZZO prices and availability.',
-          style: TextStyle(color: muted, fontSize: 12),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 14),
-        Card(
-          color: Colors.white,
-          child: ListTile(
-            leading: const Icon(Icons.logout_rounded, color: navy),
-            title: const Text('Sign out'),
-            onTap: () async {
-              widget.store.clear();
-              await widget.auth.signOut();
-            },
-          ),
-        ),
-      ],
+    return BuyerAccountPage(
+      repository: widget.buyerAccount,
+      onManageAddresses: _openCheckout,
+      onSignOut: () async {
+        widget.store.clear();
+        await widget.auth.signOut();
+      },
     );
   }
-
-  Widget _accountTile(
-    IconData icon,
-    String title,
-    String subtitle, {
-    VoidCallback? onTap,
-  }) => Card(
-    color: Colors.white,
-    child: ListTile(
-      leading: Icon(icon, color: navy),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: onTap ?? () => _info(title, subtitle),
-    ),
-  );
 
   void _openCart() => Navigator.of(context).push(
     MaterialPageRoute(

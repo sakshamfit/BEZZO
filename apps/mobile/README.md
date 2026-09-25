@@ -1,6 +1,6 @@
 # BEZZO Mobile
 
-Flutter buyer app prototype for BEZZO, a B2B medicine marketplace.
+Flutter buyer app for BEZZO, a B2B medicine marketplace.
 
 ## Run and build
 
@@ -29,8 +29,9 @@ missing; never commit the keystore or those values.
 - `core/` contains shared colors and money formatting.
 - `features/catalog/` contains live catalog and category API models.
 - `features/cart/` contains the server-backed cart and basket screen.
-- `features/auth/` contains password/OTP sign-in, session handling, and authentication UI.
-- `features/checkout/` contains delivery addresses, live quotes, COD order placement, and order models.
+- `features/auth/` contains buyer registration, email/phone verification, password/OTP sign-in, and session handling.
+- `features/account/` contains buyer business profile editing and compliance-document upload/review.
+- `features/checkout/` contains delivery addresses, live quotes, COD order placement, and order models/details.
 - `features/marketplace/presentation/` contains the storefront, product cards, and box artwork.
 
-Authentication, catalog browsing, supplier offers, cart, delivery quote, COD checkout, and order history use the BEZZO API. Buyers can open API-backed order details, view supplier fulfilments, delivery address, payment and timeline, and request server-validated cancellation. The UI presents quantities as sealed medicine boxes and applies each supplier offer's MOQ. Session credentials use platform secure storage, restore against `/me`, refresh after an API 401, and are revoked on sign-out. Online payment handoff, buyer compliance-document upload, push notifications, and production signing/release automation remain to be connected/configured in this Flutter client.
+Authentication, buyer registration, catalog browsing, supplier offers, cart, delivery quote, COD checkout, and order history use the BEZZO API. Buyers can edit their business profile, upload/view/remove eligible private compliance documents, open order details, view supplier fulfilments/delivery/payment/timeline, and request server-validated cancellation. Documents are capped at 1 MB in this client because the API's default JSON body limit is 2 MB; production should use a presigned direct-to-storage flow. The UI presents quantities as sealed medicine boxes and applies each supplier offer's MOQ. Session credentials use platform secure storage, restore against `/me`, refresh after an API 401, and are revoked on sign-out. Online payment handoff, push notifications, production signing/release automation, and device-matrix verification remain to be connected/configured.

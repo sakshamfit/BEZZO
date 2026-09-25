@@ -14,6 +14,26 @@ class AuthController extends ChangeNotifier {
   AuthSession? session;
   String? startupError;
 
+  Future<void> registerBuyer({
+    required String displayName,
+    required String businessName,
+    required String identifier,
+    required String password,
+  }) => _repository.registerBuyer(
+    displayName: displayName,
+    businessName: businessName,
+    identifier: identifier,
+    password: password,
+  );
+
+  Future<OtpChallenge> requestVerificationCode(String identifier) =>
+      _repository.requestVerificationCode(identifier);
+
+  Future<void> verifyAccountCode({
+    required OtpChallenge challenge,
+    required String code,
+  }) => _repository.verifyAccountCode(challenge: challenge, code: code);
+
   Future<void> restore() async {
     status = AuthStatus.restoring;
     startupError = null;

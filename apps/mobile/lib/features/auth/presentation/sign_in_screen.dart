@@ -21,8 +21,13 @@ class _SignInScreenState extends State<SignInScreen> {
   final _identifier = TextEditingController();
   final _password = TextEditingController();
   final _code = TextEditingController();
+  final _displayName = TextEditingController();
+  final _businessName = TextEditingController();
+  final _confirmPassword = TextEditingController();
   OtpChallenge? _challenge;
   bool _passwordMode = true;
+  bool _registerMode = false;
+  bool _registrationPending = false;
   bool _obscurePassword = true;
   bool _busy = false;
   String? _error;
@@ -32,6 +37,9 @@ class _SignInScreenState extends State<SignInScreen> {
     _identifier.dispose();
     _password.dispose();
     _code.dispose();
+    _displayName.dispose();
+    _businessName.dispose();
+    _confirmPassword.dispose();
     super.dispose();
   }
 
@@ -83,7 +91,55 @@ class _SignInScreenState extends State<SignInScreen> {
       _error = null;
     });
     try {
-      await widget.auth.verifyLoginCode(challenge: challenge, code: _code.text);
+      if (_registrationPending) {
+        await widget.auth.verifyAccountCode(
+          challenge: challenge,
+          code: _code.text,
+        );
+        await widget.auth.signInWithPassword(
+          identifier: _identifier.text,
+          password: _password.text,
+        );
+      } else {
+        await widget.auth.verifyLoginCode(
+          challenge: challenge,
+          code: _code.text,
+        );
+      }
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _registerBuyer() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (_password.text != _confirmPassword.text) {
+      setState(() => _error = 'The passwords do not match.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.auth.registerBuyer(
+        displayName: _displayName.text,
+        businessName: _businessName.text,
+        identifier: _identifier.text,
+        password: _password.text,
+      );
+      final challenge = await widget.auth.requestVerificationCode(
+        _identifier.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _challenge = challenge;
+        _registrationPending = true;
+      });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } on FormatException catch (error) {
@@ -138,7 +194,54 @@ class _SignInScreenState extends State<SignInScreen> {
                       style: TextStyle(color: muted, height: 1.4),
                     ),
                     const SizedBox(height: 28),
-                    if (challenge == null) _methodSelector(),
+                    if (challenge == null && !_registerMode) _methodSelector(),
+                    if (challenge == null)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => setState(() {
+                                  _registerMode = !_registerMode;
+                                  _passwordMode = true;
+                                  _error = null;
+                                }),
+                          child: Text(
+                            _registerMode
+                                ? 'Already have an account? Sign in'
+                                : 'Create a pharmacy account',
+                          ),
+                        ),
+                      ),
+                    if (challenge == null && _registerMode) ...[
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        controller: _displayName,
+                        enabled: !_busy,
+                        textCapitalization: TextCapitalization.words,
+                        validator: (value) => (value?.trim().length ?? 0) < 2
+                            ? 'Enter the account holder name.'
+                            : null,
+                        decoration: const InputDecoration(
+                          labelText: 'Account holder name',
+                          prefixIcon: Icon(Icons.person_outline_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _businessName,
+                        enabled: !_busy,
+                        textCapitalization: TextCapitalization.words,
+                        validator: (value) => (value?.trim().length ?? 0) < 2
+                            ? 'Enter your pharmacy or business name.'
+                            : null,
+                        decoration: const InputDecoration(
+                          labelText: 'Pharmacy / business name',
+                          prefixIcon: Icon(Icons.storefront_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     const SizedBox(height: 18),
                     TextFormField(
                       controller: _identifier,
@@ -196,7 +299,7 @@ class _SignInScreenState extends State<SignInScreen> {
                           style: const TextStyle(color: muted, fontSize: 12),
                         ),
                       ],
-                    ] else if (_passwordMode) ...[
+                    ] else if (_passwordMode || _registerMode) ...[
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _password,
@@ -231,6 +334,21 @@ class _SignInScreenState extends State<SignInScreen> {
                           ),
                         ),
                       ),
+                      if (_registerMode) ...[
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _confirmPassword,
+                          enabled: !_busy,
+                          obscureText: true,
+                          validator: (value) => (value?.isEmpty ?? true)
+                              ? 'Confirm your password.'
+                              : null,
+                          decoration: const InputDecoration(
+                            labelText: 'Confirm password',
+                            prefixIcon: Icon(Icons.lock_outline_rounded),
+                          ),
+                        ),
+                      ],
                     ],
                     if (_error != null) ...[
                       const SizedBox(height: 14),
@@ -252,6 +370,8 @@ class _SignInScreenState extends State<SignInScreen> {
                           ? null
                           : challenge != null
                           ? _verifyCode
+                          : _registerMode
+                          ? _registerBuyer
                           : _passwordMode
                           ? _signInWithPassword
                           : _requestCode,
@@ -272,7 +392,11 @@ class _SignInScreenState extends State<SignInScreen> {
                             )
                           : Text(
                               challenge != null
-                                  ? 'Verify and sign in'
+                                  ? _registrationPending
+                                        ? 'Verify account and continue'
+                                        : 'Verify and sign in'
+                                  : _registerMode
+                                  ? 'Create account and send code'
                                   : _passwordMode
                                   ? 'Sign in'
                                   : 'Send sign-in code',
@@ -289,6 +413,7 @@ class _SignInScreenState extends State<SignInScreen> {
                             : () {
                                 setState(() {
                                   _challenge = null;
+                                  _registrationPending = false;
                                   _code.clear();
                                   _error = null;
                                 });

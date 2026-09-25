@@ -49,3 +49,4 @@ docs/api/openapi.yaml
 
 # turborepo cache
 .turbo/
+.claude/

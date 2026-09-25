@@ -433,7 +433,9 @@ inventory violates `reserved_quantity <= available_quantity`.
 | Picker pickup / hub receiving / delivery flows | NOT IMPLEMENTED | Phases 7–8. Supplier fulfillment accept/pack/ready is implemented; picker claiming, hub package receipt and retailer delivery are not. |
 | Admin & backoffice (verification queues, disputes, settlements) | NOT IMPLEMENTED | Phase 9. |
 | Analytics & reporting, promotions (`0014_promotions.sql`) | NOT IMPLEMENTED | Promotions migration is planned but not written; do not invent promotion rules without the spec. |
-| Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer client has API-backed password/OTP sign-in, secure session storage, `/me` restoration, shared refresh-on-401, live catalog/category search, per-supplier offers, server cart, scheduled delivery quote, COD order placement, order history, order details, supplier fulfilments, delivery/payment/timeline details, and server-validated cancellation. Buyer profile/onboarding, compliance documents, online payment handoff, push notifications, release signing configuration, and device-matrix verification remain. Flutter analyze and Android debug APK build pass; production signing/API configuration remains required. |
+| Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer client has buyer registration with email/phone verification, password/OTP sign-in, secure session storage, `/me` restoration, shared refresh-on-401, live catalog/category search, per-supplier offers, server cart, scheduled delivery quote, COD checkout, order history/details/cancellation, buyer business-profile editing, and compliance document upload/view/removal. Online payment handoff, push notifications, production signing/API configuration, direct-to-storage document uploads, and device-matrix verification remain. Flutter analyze and Android debug APK build pass. |
+| API response compression | IMPLEMENTED (runtime requirement) | API negotiates Zstandard on Node.js 22.15+, then Brotli, then gzip for textual payloads ≥1 KB. Request decompression stays disabled. Runtime/build verification is pending the required Node.js 22.15 toolchain. |
+| API load balancing | PARTIALLY IMPLEMENTED | `infra/kubernetes/api.yaml` defines 3+ ready API replicas, Service/Ingress balancing, health probes, TLS-secret reference, disruption budget, graceful updates, and CPU/memory HPA. Production cluster, image, host, secrets, managed LB/WAF/CDN, and TLS certificate still require operator configuration. |
 | Test suites | PARTIALLY IMPLEMENTED | `pnpm --filter @bezzo/api test:integration` runs 21 black-box tests against a booted API (RBAC negative matrix, payments critical scenarios, reservation commitment) — 21/21 green and mutation-checked. Unit, contract, load, mobile and the remaining concurrency scenarios are still **NOT IMPLEMENTED**. |
 | Redis / OpenSearch / S3 in this environment | REQUIRES CONFIGURATION | Fallbacks are intentional and reported by `/health`; production must set `REDIS_URL`, `SEARCH_ENABLED=true`, storage credentials. |
 | Razorpay / Porter live keys | REQUIRES EXTERNAL CREDENTIALS | Boot refuses to start Razorpay without credentials rather than silently degrading. |
@@ -457,9 +459,8 @@ inventory violates `reserved_quantity <= available_quantity`.
    application into a supplier/buyer invite, and an operations dashboard tile for `awaitingReview`.
 6. Live gateway work when credentials exist: Razorpay checkout handoff in the web client (the API already
    creates the intent), webhook secret rotation, and settlement/payout reporting.
-7. Flutter buyer app: connect buyer onboarding/profile, document upload, and online payment handoff;
-   then add lifecycle/deep-link behavior, release signing, and device-matrix verification. Order
-   detail/cancellation is API-connected.
+7. Flutter buyer app: connect online payment handoff; then add lifecycle/deep-link behavior, release
+   signing, direct-to-storage compliance uploads, push notifications, and device-matrix verification.
 
 ## 8. Verification commands used
 

@@ -17,6 +17,14 @@ import { AppModule } from './app.module';
 import { requestContextMiddleware } from './common/middleware/request-context.middleware';
 import { renderApiIndex } from './common/http/api-index';
 
+const zlib = require('node:zlib') as typeof import('node:zlib') & {
+  createZstdCompress?: unknown;
+};
+const responseEncodings =
+  typeof zlib.createZstdCompress === 'function'
+    ? ['zstd', 'br', 'gzip']
+    : ['br', 'gzip'];
+
 async function bootstrap(): Promise<void> {
   // `.env` is a developer convenience only: variables already present in the environment (containers,
   // CI, secret manager) always win.
@@ -75,6 +83,19 @@ async function bootstrap(): Promise<void> {
       }
     },
   );
+
+  // Compress textual API responses at the origin so clients benefit even when the edge does not
+  // negotiate compression. Prefer Zstandard on Node 22.15+, then Brotli, then gzip. Compressed
+  // request bodies remain disabled; image/PDF and other already-compressed media are not compressed.
+  await app.register(require('@fastify/compress'), {
+    global: true,
+    globalDecompression: false,
+    encodings: responseEncodings,
+    threshold: 1024,
+    brotliOptions: {
+      params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 },
+    },
+  });
 
   // Security headers for a JSON API.
   //

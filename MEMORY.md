@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-24** (Flutter buyer API flow expanded; see §2).
+Last updated: **2026-09-24** (Flutter buyer registration/account flows expanded; see §2).
 
 ---
 
@@ -67,9 +67,16 @@ Password/OTP sign-in, secure session storage, `/me` session restoration, one sha
 logout, supplier offers, live cart, server quote, COD order placement, and order history are API-backed.
 Order details show supplier fulfilments, delivery address, payment and timeline; cancellation is routed
 through the server's guarded/idempotent endpoint. Flutter analyze and a debug APK build pass. Online
-payment handoff, buyer profile/onboarding, compliance-document upload, and push notifications remain
-to build. Set `BEZZO_API_BASE_URL` at build time for non-emulator environments; release builds require
-HTTPS and upload signing credentials. The next mobile slice is buyer profile/onboarding and documents.
+payment handoff and push notifications remain to build. Buyer registration with email/phone verification,
+business-profile editing, and compliance-document upload/list/view/removal are API-backed. Mobile uploads
+are limited to 1 MB because the API's default JSON body limit is 2 MB; production should add the planned
+presigned direct-to-storage path. Set `BEZZO_API_BASE_URL` at build time for non-emulator environments;
+release builds require HTTPS and upload signing credentials. Device-matrix verification is outstanding.
+API-origin response negotiation now prefers zstd (Node 22.15+), then Brotli, then gzip for text payloads;
+request decompression is disabled. A Kubernetes API deployment template adds ready-pod load balancing,
+health probes, rolling updates, and autoscaling. Production infra values and cluster rollout are not yet
+configured. This Windows environment currently has Node 20.19, so the Zstandard runtime path cannot be
+verified here.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 
