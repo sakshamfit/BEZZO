@@ -59,7 +59,7 @@ fulfilled — closes the unpaid order with it (see §5.2).
 | 4 | Marketplace: cart, checkout, orders, payments | Cart + quote + order placement + cancellation + reservation commitment/expiry **IMPLEMENTED** (web `/cart`, `/checkout`, `/orders`, `/orders/[orderId]`); payment capture, webhooks, retry and refunds **IMPLEMENTED** (Phase 6 below) |
 | 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | Supplier fulfillment list/detail, accept/reject, pack and ready-for-pickup are **IMPLEMENTED** (API, web workspace, integration coverage); picker pickup remains Phase 7 |
 | 6 | Payments: abstraction, server verification, webhooks, reconciliation | **IMPLEMENTED** end to end: provider abstraction (mock + razorpay; cashfree adapter **NOT IMPLEMENTED**), signed webhook intake with evidence + replay protection, capture → order confirmation, buyer retry, admin full/partial refunds, reconciliation poll, buyer payment UI and `/admin/payments` backoffice. Live-gateway checkout UI and settlement payouts **REQUIRES EXTERNAL CREDENTIALS** / later phase |
-| 7 | Picker system: offers, atomic claim, runs, stops, package scans, hub receiving | **PARTIALLY IMPLEMENTED**: picker heartbeat/availability, home-hub and capacity scoped task queue, and transactional one-picker claim are in the API; runs, stop progression, package scans, hub receiving and picker UI remain **NOT IMPLEMENTED** |
+| 7 | Picker system: offers, atomic claim, runs, stops, package scans, hub receiving | **PARTIALLY IMPLEMENTED**: heartbeat/availability, home-hub and capacity scoped task queue, atomic claim, supplier arrival, collection start, package list/scans, offline scan replay and unexpected-package exceptions are in the API; offer generation, pickup completion, runs/stops, hub receiving and picker UI remain **NOT IMPLEMENTED** |
 | 8 | Delivery: hub → retailer, Porter adapter, slots, tracking | Logistics adapter **IMPLEMENTED**; delivery flow **NOT IMPLEMENTED** |
 | 9 | Admin / backoffice: verification queues, disputes, settlements, analytics | **PARTIALLY IMPLEMENTED**: partner-application queue (`/admin/applications`) and the payments backoffice (`/admin/payments`: search, evidence trail, refunds). Verification queues, disputes, settlements and analytics are **NOT IMPLEMENTED** |
 | 10 | Scale & hardening: load tests, DR, autoscaling, WAF | **NOT IMPLEMENTED** |
@@ -103,12 +103,12 @@ idempotency, audit, jobs/scheduler (5 jobs, advisory-locked), metrics, search (O
 fallback), notifications (IN_APP guaranteed, unconfigured channels fail rather than lie), payments
 (server-verified, mock + Razorpay), logistics (manual + Porter adapter with webhook signature).
 
-Picker API (`/api/v1/picker`): `POST /heartbeat` persists availability/location; `GET /tasks` returns
-the active task and work in the picker's home hub when the picker has a fresh heartbeat and enough
-capacity; `POST /tasks/:taskId/accept` claims an unassigned task in one conditional database update,
-updates picker availability, supersedes competing offers, records an audit row and transactional domain
-event. Task claims require an active picker role/permission and fresh heartbeat. This is the first
-Phase 7 slice; task offer generation, run/stop progression, scans and hub receiving are still absent.
+Picker API (`/api/v1/picker`): availability heartbeat, hub/capacity scoped task queue, transactional
+task claim and fulfillment assignment, supplier arrival, collection start, task package list, and
+package scanning are implemented. Scans use server-side package/task ownership checks, conditional
+collection writes and offline `localEventId` deduplication. Unexpected/wrong packages create a pickup
+exception without exposing another task’s package details. Actions write audit/domain events. Offer
+generation, pickup completion/reconciliation, runs/stops, hub receiving and picker UI remain absent.
 The API TypeScript/Nest build and OpenAPI export passed; picker runtime/integration behavior has not
 been exercised against the API and database.
 
@@ -117,7 +117,7 @@ been exercised against the API and database.
 | auth | register, login, otp request/verify, refresh, logout, logout-all, sessions, `me`, `me/security`, `me/password`, delete `me` | rotating refresh tokens with family revocation on replay, peppered single-use OTP, login lockout, password history, cache `actor:<uid>:<sid>` 60 s |
 | buyers | profile, addresses CRUD, documents | buyer-only, ownership enforced by `actor.buyerId` |
 | suppliers | profile, verification submit, documents, listings CRUD, inventory + adjust/set/ledger | supplier-only; every stock change writes an `inventory_transactions` row |
-| picker | heartbeat, available/active tasks, atomic task accept | picker-only; queue restricted by home hub/capacity; assignment audited and emitted through the outbox |
+| picker | heartbeat, task list/accept/arrive/start-collection, package list/scan | picker-only; queue restricted by hub/capacity; scans enforce task ownership and replay-safe package collection |
 | catalog | categories, manufacturers, dosage-forms, delivery-slots, products (search/filter/sort), products/suggest, products/:id | public read; product detail returns live offers with sellable quantity |
 | cart | GET cart, POST items, PATCH item, DELETE item, DELETE cart | implemented this session — see §5 |
 | checkout | POST checkout/quote | server-priced preview of the live basket (address, mode, slot, serviceability), zero side effects — see §5.2 |

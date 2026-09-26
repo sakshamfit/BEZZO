@@ -11,4 +11,35 @@ export const pickerHeartbeatSchema = z
   })
   .strict();
 
+export const pickerLocationSchema = z
+  .object({
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+  })
+  .strict()
+  .default({});
+
+export const scanPackageSchema = z
+  .object({
+    scanCode: z.string().trim().min(1).max(160),
+    localEventId: z.string().trim().min(8).max(255).optional(),
+    scanResultHint: z
+      .enum([
+        'ACCEPTED',
+        'DUPLICATE',
+        'UNEXPECTED',
+        'UNREADABLE',
+        'DAMAGED',
+        'WRONG_HUB',
+        'ALREADY_RECEIVED',
+      ])
+      .nullable()
+      .optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+  })
+  .strict();
+
 export type PickerHeartbeatInput = z.infer<typeof pickerHeartbeatSchema>;
+export type PickerLocationInput = z.infer<typeof pickerLocationSchema>;
+export type ScanPackageInput = z.infer<typeof scanPackageSchema>;

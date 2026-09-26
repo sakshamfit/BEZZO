@@ -1731,6 +1731,129 @@
           "picker"
         ]
       }
+    },
+    "/api/v1/picker/tasks/{taskId}/arrive": {
+      "post": {
+        "operationId": "PickerController_arrive",
+        "parameters": [
+          {
+            "name": "taskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Confirm arrival at the supplier pickup location",
+        "tags": [
+          "picker"
+        ]
+      }
+    },
+    "/api/v1/picker/tasks/{taskId}/start-collection": {
+      "post": {
+        "operationId": "PickerController_startCollection",
+        "parameters": [
+          {
+            "name": "taskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Start scanning packages at the supplier",
+        "tags": [
+          "picker"
+        ]
+      }
+    },
+    "/api/v1/picker/tasks/{taskId}/packages": {
+      "get": {
+        "operationId": "PickerController_packages",
+        "parameters": [
+          {
+            "name": "taskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List task packages and current pickup reconciliation",
+        "tags": [
+          "picker"
+        ]
+      }
+    },
+    "/api/v1/picker/tasks/{taskId}/packages/scan": {
+      "post": {
+        "operationId": "PickerController_scanPackage",
+        "parameters": [
+          {
+            "name": "taskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Scan an expected sealed package for supplier pickup",
+        "tags": [
+          "picker"
+        ]
+      }
     }
   },
   "info": {

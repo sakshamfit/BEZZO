@@ -1,13 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { DomainEventName, ErrorCode, Permission } from '@bezzo/contracts';
+import {
+  DomainEventName,
+  ErrorCode,
+  PackageStatus,
+  PICKUP_TASK_STATUS_TRANSITIONS,
+  Permission,
+  PickupTaskStatus,
+} from '@bezzo/contracts';
 import type { Database as DatabaseType } from '@bezzo/database';
+import type { QueryResult, QueryResultRow } from 'pg';
 import { DATABASE } from '../../infrastructure/database/database.module';
 import { EventBusService } from '../../infrastructure/events/event-bus.service';
 import { AuditService } from '../../infrastructure/audit/audit.service';
 import { DomainError } from '../../common/errors/domain-error';
 import type { AuthenticatedActor } from '../../common/context/request-context';
 import { currentRequestId } from '../../common/context/request-context';
-import type { PickerHeartbeatInput } from './picker.schemas';
+import type { PickerHeartbeatInput, PickerLocationInput, ScanPackageInput } from './picker.schemas';
 
 interface PickupTaskRow {
   id: string;
@@ -28,6 +36,21 @@ interface PickupTaskRow {
   package_count: number;
   assigned_picker_id: string | null;
   created_at: Date;
+}
+
+interface PickerQueryable {
+  query<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    params?: readonly unknown[],
+  ): Promise<QueryResult<T>>;
+}
+
+interface PackageSummaryRow {
+  id: string;
+  package_code: string;
+  status: string;
+  collected_at: Date | null;
+  expected_hub_id: string | null;
 }
 
 @Injectable()
@@ -82,6 +105,286 @@ export class PickerService {
         ],
       );
       return { status, serverTime: updated.rows[0]!.last_heartbeat_at.toISOString() };
+    });
+  }
+
+  async arrive(actor: AuthenticatedActor, taskId: string, input: PickerLocationInput) {
+    return this.transitionTask(
+      actor,
+      taskId,
+      PickupTaskStatus.ARRIVED,
+      DomainEventName.PickerArrivedAtSupplier,
+      {
+        timestampColumn: 'arrived_at',
+        eventType: 'ARRIVED_AT_SUPPLIER',
+        latitude: input.latitude,
+        longitude: input.longitude,
+      },
+    );
+  }
+
+  async startCollection(actor: AuthenticatedActor, taskId: string) {
+    return this.transitionTask(
+      actor,
+      taskId,
+      PickupTaskStatus.COLLECTING,
+      DomainEventName.PickupCollectionStarted,
+      { timestampColumn: 'collection_started_at', eventType: 'COLLECTION_STARTED' },
+    );
+  }
+
+  async listPackages(actor: AuthenticatedActor, taskId: string) {
+    const pickerId = this.requirePicker(actor);
+    const task = await this.database.row<{ id: string }>(
+      `SELECT id FROM pickup_tasks WHERE id = $1 AND assigned_picker_id = $2`,
+      [taskId, pickerId],
+    );
+    if (!task)
+      throw DomainError.forbidden(
+        ErrorCode.TASK_NOT_ASSIGNED_TO_PICKER,
+        'Pickup is not assigned to this picker',
+      );
+
+    const rows = await this.database.rows<{
+      id: string;
+      package_code: string;
+      status: string;
+      collected_at: Date | null;
+      received_at: Date | null;
+      expected_hub_id: string | null;
+    }>(
+      `SELECT id, package_code, status, collected_at, received_at, expected_hub_id
+         FROM pickup_packages WHERE pickup_task_id = $1 ORDER BY package_code`,
+      [taskId],
+    );
+    const reconciliation = await this.reconcilePackages(this.database, taskId);
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        packageCode: row.package_code,
+        status: row.status,
+        collectedAt: row.collected_at?.toISOString() ?? null,
+        receivedAt: row.received_at?.toISOString() ?? null,
+        expectedHubId: row.expected_hub_id,
+      })),
+      reconciliation,
+    };
+  }
+
+  async scanPackage(actor: AuthenticatedActor, taskId: string, input: ScanPackageInput) {
+    const pickerId = this.requirePicker(actor);
+    return this.database.transaction(async (client) => {
+      const taskResult = await client.query<{ status: string; assigned_picker_id: string | null }>(
+        `SELECT status, assigned_picker_id FROM pickup_tasks WHERE id = $1 FOR UPDATE`,
+        [taskId],
+      );
+      const task = taskResult.rows[0];
+      if (!task) throw DomainError.notFound(ErrorCode.TASK_NOT_FOUND, 'Pickup task was not found');
+      if (task.assigned_picker_id !== pickerId)
+        throw DomainError.forbidden(
+          ErrorCode.TASK_NOT_ASSIGNED_TO_PICKER,
+          'Pickup is not assigned to this picker',
+        );
+      if (task.status !== PickupTaskStatus.COLLECTING)
+        throw DomainError.conflict(
+          ErrorCode.TASK_STATE_INVALID,
+          'Start collection before scanning packages',
+        );
+
+      if (input.localEventId) {
+        const prior = await client.query<{
+          pickup_task_id: string | null;
+          picker_id: string | null;
+          package_id: string | null;
+        }>(
+          `SELECT pickup_task_id, picker_id, package_id FROM pickup_events WHERE local_event_id = $1`,
+          [input.localEventId],
+        );
+        if (prior.rows[0]) {
+          if (prior.rows[0].pickup_task_id !== taskId || prior.rows[0].picker_id !== pickerId)
+            throw DomainError.conflict(
+              ErrorCode.IDEMPOTENCY_KEY_CONFLICT,
+              'Local event id was already used for another operation',
+            );
+          const packageRow = prior.rows[0].package_id
+            ? await client.query<{
+                id: string;
+                package_code: string;
+                status: string;
+                collected_at: Date | null;
+                expected_hub_id: string | null;
+              }>(
+                `SELECT id, package_code, status, collected_at, expected_hub_id FROM pickup_packages WHERE id = $1`,
+                [prior.rows[0].package_id],
+              )
+            : { rows: [] };
+          return {
+            accepted: Boolean(packageRow.rows[0]),
+            result: packageRow.rows[0] ? 'ACCEPTED' : 'UNEXPECTED',
+            package: packageRow.rows[0] ? this.packageSummary(packageRow.rows[0]) : null,
+            reconciliation: await this.reconcilePackages(client, taskId),
+            message: 'This offline scan was already recorded',
+            idempotentReplay: true,
+          };
+        }
+      }
+
+      const packageResult = await client.query<{
+        id: string;
+        fulfillment_id: string;
+        package_code: string;
+        status: string;
+        collected_at: Date | null;
+        collected_by_picker_id: string | null;
+        expected_hub_id: string | null;
+      }>(
+        `SELECT id, fulfillment_id, package_code, status, collected_at, collected_by_picker_id, expected_hub_id
+           FROM pickup_packages WHERE package_code = $1 AND pickup_task_id = $2 FOR UPDATE`,
+        [input.scanCode, taskId],
+      );
+      const packageRow = packageResult.rows[0];
+      if (!packageRow) {
+        const elsewhere = await client.query<{ id: string | null }>(
+          `SELECT id FROM pickup_packages WHERE package_code = $1 LIMIT 1`,
+          [input.scanCode],
+        );
+        const exceptionType = elsewhere.rows[0] ? 'WRONG_PACKAGE' : 'PACKAGE_UNEXPECTED';
+        await client.query(
+          `INSERT INTO pickup_exceptions (pickup_task_id, type, reason, reported_by, reported_by_type)
+           VALUES ($1, $2, 'Scanned package is not expected on this pickup task', $3, 'PICKER')`,
+          [taskId, exceptionType, actor.userId],
+        );
+        await client.query(
+          `INSERT INTO pickup_events (pickup_task_id, picker_id, event_type, actor_type, actor_id, local_event_id,
+             latitude, longitude, request_id, metadata)
+           VALUES ($1, $2, 'PACKAGE_SCAN_UNEXPECTED', 'PICKER', $3, $4, $5, $6, $7, jsonb_build_object('scanCode', $8))`,
+          [
+            taskId,
+            pickerId,
+            actor.userId,
+            input.localEventId ?? null,
+            input.latitude ?? null,
+            input.longitude ?? null,
+            currentRequestId() ?? null,
+            input.scanCode,
+          ],
+        );
+        await this.audit.record(client, {
+          action: 'picker.unexpected_package_scanned',
+          resourceType: 'pickup_task',
+          resourceId: taskId,
+          actorUserId: actor.userId,
+          metadata: { pickerId, exceptionType },
+        });
+        await this.events.emit(client, {
+          eventName: DomainEventName.PickupExceptionCreated,
+          aggregateType: 'pickup_task',
+          aggregateId: taskId,
+          payload: { taskId, pickerId, exceptionType },
+        });
+        return {
+          accepted: false,
+          result: 'UNEXPECTED',
+          package: null,
+          reconciliation: await this.reconcilePackages(client, taskId),
+          message: 'Package is not expected on this pickup',
+          idempotentReplay: false,
+        };
+      }
+
+      if (packageRow.collected_at || packageRow.status !== PackageStatus.READY_FOR_PICKUP) {
+        await client.query(
+          `INSERT INTO pickup_events (pickup_task_id, package_id, picker_id, event_type, actor_type, actor_id,
+             local_event_id, latitude, longitude, request_id, metadata)
+           VALUES ($1, $2, $3, 'PACKAGE_SCAN_DUPLICATE', 'PICKER', $4, $5, $6, $7, $8, '{}'::JSONB)`,
+          [
+            taskId,
+            packageRow.id,
+            pickerId,
+            actor.userId,
+            input.localEventId ?? null,
+            input.latitude ?? null,
+            input.longitude ?? null,
+            currentRequestId() ?? null,
+          ],
+        );
+        return {
+          accepted: false,
+          result: 'DUPLICATE',
+          package: this.packageSummary(packageRow),
+          reconciliation: await this.reconcilePackages(client, taskId),
+          message: 'Package was already collected or is not ready for pickup',
+          idempotentReplay: false,
+        };
+      }
+
+      const updated = await client.query<{
+        id: string;
+        package_code: string;
+        status: string;
+        collected_at: Date | null;
+        expected_hub_id: string | null;
+      }>(
+        `UPDATE pickup_packages SET status = $3, collected_by_picker_id = $4, collected_at = now(), updated_at = now()
+          WHERE id = $1 AND pickup_task_id = $2 AND status = $5 AND collected_at IS NULL
+          RETURNING id, package_code, status, collected_at, expected_hub_id`,
+        [
+          packageRow.id,
+          taskId,
+          PackageStatus.PICKER_COLLECTED,
+          pickerId,
+          PackageStatus.READY_FOR_PICKUP,
+        ],
+      );
+      const collected = updated.rows[0];
+      if (!collected)
+        throw DomainError.conflict(
+          ErrorCode.PACKAGE_ALREADY_COLLECTED,
+          'Package was already collected',
+        );
+
+      await client.query(
+        `UPDATE pickup_task_orders SET package_count_collected = package_count_collected + 1, updated_at = now()
+          WHERE pickup_task_id = $1 AND fulfillment_id = $2 AND status = 'ACTIVE'`,
+        [taskId, packageRow.fulfillment_id],
+      );
+      await client.query(
+        `INSERT INTO pickup_events (pickup_task_id, package_id, picker_id, event_type, actor_type, actor_id,
+           local_event_id, latitude, longitude, request_id, metadata)
+         VALUES ($1, $2, $3, 'PACKAGE_SCAN_ACCEPTED', 'PICKER', $4, $5, $6, $7, $8, jsonb_build_object('scanCode', $9))`,
+        [
+          taskId,
+          collected.id,
+          pickerId,
+          actor.userId,
+          input.localEventId ?? null,
+          input.latitude ?? null,
+          input.longitude ?? null,
+          currentRequestId() ?? null,
+          collected.package_code,
+        ],
+      );
+      await this.audit.record(client, {
+        action: 'picker.package_collected',
+        resourceType: 'pickup_package',
+        resourceId: collected.id,
+        actorUserId: actor.userId,
+        metadata: { pickerId, taskId, packageCode: collected.package_code },
+      });
+      await this.events.emit(client, {
+        eventName: DomainEventName.PackageCollected,
+        aggregateType: 'pickup_package',
+        aggregateId: collected.id,
+        payload: { taskId, packageId: collected.id, packageCode: collected.package_code, pickerId },
+      });
+      return {
+        accepted: true,
+        result: 'ACCEPTED',
+        package: this.packageSummary(collected),
+        reconciliation: await this.reconcilePackages(client, taskId),
+        message: 'Package collected',
+        idempotentReplay: false,
+      };
     });
   }
 
@@ -287,6 +590,138 @@ export class PickerService {
     if (!actor.pickerId)
       throw DomainError.notFound(ErrorCode.PICKER_NOT_FOUND, 'Picker profile was not found');
     return actor.pickerId;
+  }
+
+  private async transitionTask(
+    actor: AuthenticatedActor,
+    taskId: string,
+    nextStatus: PickupTaskStatus,
+    eventName: string,
+    options: {
+      timestampColumn: 'arrived_at' | 'collection_started_at';
+      eventType: string;
+      latitude?: number;
+      longitude?: number;
+    },
+  ) {
+    const pickerId = this.requirePicker(actor);
+    return this.database.transaction(async (client) => {
+      const result = await client.query<{ status: string; assigned_picker_id: string | null }>(
+        `SELECT status, assigned_picker_id FROM pickup_tasks WHERE id = $1 FOR UPDATE`,
+        [taskId],
+      );
+      const task = result.rows[0];
+      if (!task) throw DomainError.notFound(ErrorCode.TASK_NOT_FOUND, 'Pickup task was not found');
+      if (task.assigned_picker_id !== pickerId)
+        throw DomainError.forbidden(
+          ErrorCode.TASK_NOT_ASSIGNED_TO_PICKER,
+          'Pickup is not assigned to this picker',
+        );
+      const transitions = PICKUP_TASK_STATUS_TRANSITIONS[task.status as PickupTaskStatus] ?? [];
+      if (!transitions.includes(nextStatus))
+        throw DomainError.conflict(
+          ErrorCode.TASK_STATE_INVALID,
+          `Cannot move pickup from ${task.status} to ${nextStatus}`,
+        );
+
+      const updated = await client.query<{ status: string }>(
+        `UPDATE pickup_tasks SET status = $2,
+             arrived_at = CASE WHEN $2 = 'ARRIVED' THEN now() ELSE arrived_at END,
+             collection_started_at = CASE WHEN $2 = 'COLLECTING' THEN now() ELSE collection_started_at END,
+             updated_at = now()
+          WHERE id = $1 AND assigned_picker_id = $3 AND status = $4 RETURNING status`,
+        [taskId, nextStatus, pickerId, task.status],
+      );
+      if (!updated.rows[0])
+        throw DomainError.conflict(
+          ErrorCode.TASK_STATE_INVALID,
+          'Pickup status changed; refresh and try again',
+        );
+      await client.query(
+        `INSERT INTO pickup_events (pickup_task_id, picker_id, event_type, actor_type, actor_id,
+           latitude, longitude, request_id, metadata)
+         VALUES ($1, $2, $3, 'PICKER', $4, $5, $6, $7, '{}'::JSONB)`,
+        [
+          taskId,
+          pickerId,
+          options.eventType,
+          actor.userId,
+          options.latitude ?? null,
+          options.longitude ?? null,
+          currentRequestId() ?? null,
+        ],
+      );
+      if (options.latitude !== undefined || options.longitude !== undefined) {
+        await client.query(
+          `UPDATE pickers SET current_latitude = coalesce($2, current_latitude),
+             current_longitude = coalesce($3, current_longitude), last_heartbeat_at = now(), updated_at = now()
+           WHERE id = $1`,
+          [pickerId, options.latitude ?? null, options.longitude ?? null],
+        );
+      }
+      await this.events.emit(client, {
+        eventName,
+        aggregateType: 'pickup_task',
+        aggregateId: taskId,
+        payload: { taskId, pickerId, status: nextStatus },
+      });
+      await this.audit.record(client, {
+        action: options.eventType.toLowerCase(),
+        resourceType: 'pickup_task',
+        resourceId: taskId,
+        actorUserId: actor.userId,
+        metadata: { fromStatus: task.status, toStatus: nextStatus },
+      });
+      return { success: true, status: nextStatus };
+    });
+  }
+
+  private packageSummary(row: PackageSummaryRow) {
+    return {
+      id: row.id,
+      packageCode: row.package_code,
+      status: row.status,
+      collectedAt: row.collected_at?.toISOString() ?? null,
+      expectedHubId: row.expected_hub_id,
+    };
+  }
+
+  private async reconcilePackages(queryable: PickerQueryable, taskId: string) {
+    const result = await queryable.query<{
+      expected_count: number;
+      scanned_count: number;
+      collected_count: number;
+      damaged_count: number;
+      unexpected_count: number;
+      missing_codes: string[];
+      unexpected_codes: string[];
+    }>(
+      `SELECT
+         coalesce((SELECT sum(package_count) FROM pickup_task_orders WHERE pickup_task_id = $1 AND status = 'ACTIVE'), 0)::INTEGER AS expected_count,
+         (SELECT count(*) FROM pickup_events WHERE pickup_task_id = $1 AND event_type = 'PACKAGE_SCAN_ACCEPTED')::INTEGER AS scanned_count,
+         (SELECT count(*) FROM pickup_packages WHERE pickup_task_id = $1 AND collected_at IS NOT NULL)::INTEGER AS collected_count,
+         (SELECT count(*) FROM pickup_packages WHERE pickup_task_id = $1 AND status = 'DAMAGED')::INTEGER AS damaged_count,
+         (SELECT count(*) FROM pickup_exceptions WHERE pickup_task_id = $1 AND type IN ('PACKAGE_UNEXPECTED','WRONG_PACKAGE'))::INTEGER AS unexpected_count,
+         coalesce((SELECT array_agg(package_code ORDER BY package_code) FROM pickup_packages WHERE pickup_task_id = $1 AND status IN ('READY_FOR_PICKUP','MISSING')), ARRAY[]::TEXT[]) AS missing_codes,
+         coalesce((SELECT array_agg(metadata->>'scanCode' ORDER BY occurred_at) FROM pickup_events WHERE pickup_task_id = $1 AND event_type = 'PACKAGE_SCAN_UNEXPECTED'), ARRAY[]::TEXT[]) AS unexpected_codes`,
+      [taskId],
+    );
+    const row = result.rows[0]!;
+    return {
+      expectedPackageCount: row.expected_count,
+      scannedPackageCount: row.scanned_count,
+      collectedPackageCount: row.collected_count,
+      missingPackageCount: Math.max(row.expected_count - row.collected_count, 0),
+      unexpectedPackageCount: row.unexpected_count,
+      damagedPackageCount: row.damaged_count,
+      isBalanced:
+        row.expected_count > 0 &&
+        row.expected_count === row.collected_count &&
+        row.damaged_count === 0 &&
+        row.unexpected_count === 0,
+      missingPackageCodes: row.missing_codes,
+      unexpectedPackageCodes: row.unexpected_codes,
+    };
   }
 
   private toSummary(row: PickupTaskRow) {
