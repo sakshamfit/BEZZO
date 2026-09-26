@@ -54,6 +54,7 @@ import { ApplicationsModule } from './modules/applications/applications.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkerModule } from './modules/workers/worker.module';
+import { PickerModule } from './modules/picker/picker.module';
 
 @Module({
   imports: [
@@ -79,7 +80,11 @@ import { WorkerModule } from './modules/workers/worker.module';
       inject: [APP_CONFIG],
       useFactory: (config: AppConfig) => ({
         secret: config.JWT_ACCESS_SECRET,
-        signOptions: { expiresIn: config.JWT_ACCESS_TTL_SECONDS, issuer: 'bezzo-api', audience: 'bezzo-clients' },
+        signOptions: {
+          expiresIn: config.JWT_ACCESS_TTL_SECONDS,
+          issuer: 'bezzo-api',
+          audience: 'bezzo-clients',
+        },
         verifyOptions: { issuer: 'bezzo-api', audience: 'bezzo-clients' },
       }),
     }),
@@ -95,6 +100,7 @@ import { WorkerModule } from './modules/workers/worker.module';
     ApplicationsModule,
     UsersModule,
     PlatformModule,
+    PickerModule,
 
     // Background workers (no-op when WORKER_ENABLED=false)
     WorkerModule,

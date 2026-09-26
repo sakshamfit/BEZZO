@@ -1,6 +1,6 @@
 # BEZZO — implementation status (living memory)
 
-**Last updated:** 2026-09-24
+**Last updated:** 2026-09-26
 **Branch:** `main`
 **Purpose:** this file is the project's memory. It records *what actually exists in code*, how it was
 verified, what is deliberately absent, and what comes next. It is updated at the end of every work
@@ -30,14 +30,14 @@ BEZZO/
 └── *.md            the specification corpus (source of truth)
 ```
 
-Toolchain: pnpm 12.5.1 (corepack) · turbo 2.11.2 · TypeScript 5.9.3 (`strict`, `noUncheckedIndexedAccess`).
+Toolchain: npm 10.8.2 (`packageManager` pinned at repository root) · turbo 2.x · TypeScript 5.9.3 (`strict`, `noUncheckedIndexedAccess`).
 
 ## 2. Verified running system
 
 | Service | Command | Address | Evidence |
 | --- | --- | --- | --- |
 | API | `node dist/main.js` (from `apps/api`) | `0.0.0.0:4000` | 71 operations over 55 paths in the live Swagger document (same numbers in the checked-in `openapi/bezzo-api.json`; 12 of them document the required `Idempotency-Key`); `/health` 200; `/docs` 200; `/api/v1/catalog/products` 200 |
-| Web | `corepack pnpm --filter @bezzo/web dev` | `0.0.0.0:3000` | `/`, `/apply`, `/login`, `/register`, `/catalog`, `/catalog/:id`, `/cart`, `/checkout`, `/orders`, `/orders/:id`, `/account`, `/notifications`, `/status`, `/supplier`, `/supplier/listings`, `/supplier/inventory`, `/admin/applications` all return 200 |
+| Web | `npm run dev --workspace=@bezzo/web` | `0.0.0.0:3000` | `/`, `/apply`, `/login`, `/register`, `/catalog`, `/catalog/:id`, `/cart`, `/checkout`, `/orders`, `/orders/:id`, `/account`, `/notifications`, `/status`, `/supplier`, `/supplier/listings`, `/supplier/inventory`, `/admin/applications` all return 200 |
 | Database | embedded PostgreSQL 17.10 | `127.0.0.1:5432` | `bezzo_local` reset + 14/14 migrations + seed (409 statements) + `verify` PASS |
 | Redis | **not running** (no local binary) | — | documented degraded mode: in-process cache fallback, reported by `/health` |
 | OpenSearch | `SEARCH_ENABLED=false` | — | documented degraded mode: database search path, reported by `/health` |
@@ -59,7 +59,7 @@ fulfilled — closes the unpaid order with it (see §5.2).
 | 4 | Marketplace: cart, checkout, orders, payments | Cart + quote + order placement + cancellation + reservation commitment/expiry **IMPLEMENTED** (web `/cart`, `/checkout`, `/orders`, `/orders/[orderId]`); payment capture, webhooks, retry and refunds **IMPLEMENTED** (Phase 6 below) |
 | 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | Supplier fulfillment list/detail, accept/reject, pack and ready-for-pickup are **IMPLEMENTED** (API, web workspace, integration coverage); picker pickup remains Phase 7 |
 | 6 | Payments: abstraction, server verification, webhooks, reconciliation | **IMPLEMENTED** end to end: provider abstraction (mock + razorpay; cashfree adapter **NOT IMPLEMENTED**), signed webhook intake with evidence + replay protection, capture → order confirmation, buyer retry, admin full/partial refunds, reconciliation poll, buyer payment UI and `/admin/payments` backoffice. Live-gateway checkout UI and settlement payouts **REQUIRES EXTERNAL CREDENTIALS** / later phase |
-| 7 | Picker system: offers, atomic claim, runs, stops, package scans, hub receiving | **NOT IMPLEMENTED** (schema for the full flow is migrated) |
+| 7 | Picker system: offers, atomic claim, runs, stops, package scans, hub receiving | **PARTIALLY IMPLEMENTED**: picker heartbeat/availability, home-hub and capacity scoped task queue, and transactional one-picker claim are in the API; runs, stop progression, package scans, hub receiving and picker UI remain **NOT IMPLEMENTED** |
 | 8 | Delivery: hub → retailer, Porter adapter, slots, tracking | Logistics adapter **IMPLEMENTED**; delivery flow **NOT IMPLEMENTED** |
 | 9 | Admin / backoffice: verification queues, disputes, settlements, analytics | **PARTIALLY IMPLEMENTED**: partner-application queue (`/admin/applications`) and the payments backoffice (`/admin/payments`: search, evidence trail, refunds). Verification queues, disputes, settlements and analytics are **NOT IMPLEMENTED** |
 | 10 | Scale & hardening: load tests, DR, autoscaling, WAF | **NOT IMPLEMENTED** |
@@ -69,7 +69,7 @@ fulfilled — closes the unpaid order with it (see §5.2).
 
 ### 4.1 Database (`packages/database`)
 
-- 13 forward-only migrations (~80 tables) with sha256 drift detection, advisory lock `982451653`,
+- 17 forward-only migrations (~80 tables) with sha256 drift detection, advisory lock `982451653`,
   `-- @transactional: false` support for concurrent index creation.
 - Domains: identity/RBAC, buyers, suppliers, catalog, inventory (+ `inventory_transactions` ledger),
   carts, orders/order_items, fulfillment, pickup (tasks, offers, packages, runs, stops, events),
@@ -103,11 +103,21 @@ idempotency, audit, jobs/scheduler (5 jobs, advisory-locked), metrics, search (O
 fallback), notifications (IN_APP guaranteed, unconfigured channels fail rather than lie), payments
 (server-verified, mock + Razorpay), logistics (manual + Porter adapter with webhook signature).
 
+Picker API (`/api/v1/picker`): `POST /heartbeat` persists availability/location; `GET /tasks` returns
+the active task and work in the picker's home hub when the picker has a fresh heartbeat and enough
+capacity; `POST /tasks/:taskId/accept` claims an unassigned task in one conditional database update,
+updates picker availability, supersedes competing offers, records an audit row and transactional domain
+event. Task claims require an active picker role/permission and fresh heartbeat. This is the first
+Phase 7 slice; task offer generation, run/stop progression, scans and hub receiving are still absent.
+The API TypeScript/Nest build and OpenAPI export passed; picker runtime/integration behavior has not
+been exercised against the API and database.
+
 | Module | Endpoints | Notes |
 | --- | --- | --- |
 | auth | register, login, otp request/verify, refresh, logout, logout-all, sessions, `me`, `me/security`, `me/password`, delete `me` | rotating refresh tokens with family revocation on replay, peppered single-use OTP, login lockout, password history, cache `actor:<uid>:<sid>` 60 s |
 | buyers | profile, addresses CRUD, documents | buyer-only, ownership enforced by `actor.buyerId` |
 | suppliers | profile, verification submit, documents, listings CRUD, inventory + adjust/set/ledger | supplier-only; every stock change writes an `inventory_transactions` row |
+| picker | heartbeat, available/active tasks, atomic task accept | picker-only; queue restricted by home hub/capacity; assignment audited and emitted through the outbox |
 | catalog | categories, manufacturers, dosage-forms, delivery-slots, products (search/filter/sort), products/suggest, products/:id | public read; product detail returns live offers with sellable quantity |
 | cart | GET cart, POST items, PATCH item, DELETE item, DELETE cart | implemented this session — see §5 |
 | checkout | POST checkout/quote | server-priced preview of the live basket (address, mode, slot, serviceability), zero side effects — see §5.2 |
@@ -220,7 +230,7 @@ if a self-hosted build is required, drop the WOFF2 files into `apps/web/public/f
     $3` left `$2` unreferenced, which Postgres cannot type, so every tick failed with *"could not
     determine data type of parameter $2"* and expired reservations were never released. Fixed, and the
     job now also closes an unpaid order once its last reservation lapses (§5.2).
-14. **`bezzo-db` loads `.env` itself** (`corepack pnpm db:migrate` etc. failed with
+14. **`bezzo-db` loads `.env` itself** (`npm run migrate --workspace=@bezzo/database` etc. failed with
     *"DATABASE_URL is required"* when run from a package directory even though `.env` existed).
 
 ### 5.2 Checkout & order placement (this session)
@@ -465,9 +475,16 @@ inventory violates `reserved_quantity <= available_quantity`.
 ## 8. Verification commands used
 
 ```bash
-corepack pnpm --filter @bezzo/api build
-corepack pnpm --filter @bezzo/web build
-corepack pnpm db:reset -- --yes && corepack pnpm db:migrate && corepack pnpm db:seed && corepack pnpm db:verify
+npm run build --workspace=@bezzo/contracts
+npm run build --workspace=@bezzo/config
+npm run build --workspace=@bezzo/crypto
+npm run build --workspace=@bezzo/database
+npm run build --workspace=@bezzo/api
+npm run build --workspace=@bezzo/web
+npm run reset --workspace=@bezzo/database -- --yes
+npm run migrate --workspace=@bezzo/database
+npm run seed --workspace=@bezzo/database
+npm run verify --workspace=@bezzo/database
 curl -s localhost:4000/health | head -c 200
 # cart + idempotency probe (buyer1@bezzo.local / Bezzo@12345)
 curl -s -X POST localhost:4000/api/v1/cart/items -H 'content-type: application/json' \
@@ -484,9 +501,9 @@ python3 scripts/verify/payments-e2e.py
 # reservations across the payment boundary: committed COD hold, forced expiry, cancel (10 assertions)
 python3 scripts/verify/reservations-e2e.py
 # integration suites (black-box against the booted API, 21 tests, ~50 s)
-corepack pnpm --filter @bezzo/api test:integration
+npm run test:integration --workspace=@bezzo/api
 # OpenAPI export after any route change
-corepack pnpm --filter @bezzo/api openapi:export
+npm run openapi:export --workspace=@bezzo/api
 # partner applications: public submit + operations triage (curl equivalent of the old apply-flow.py)
 curl -s localhost:4000/api/v1/applications/routing
 curl -s -X POST localhost:4000/api/v1/applications -H 'content-type: application/json' \
@@ -494,6 +511,6 @@ curl -s -X POST localhost:4000/api/v1/applications -H 'content-type: application
   -d '{"applicationType":"SUPPLIER","applicantName":"A","businessName":"B Pharma","contactPhone":"+919812345678","city":"Varanasi","state":"Uttar Pradesh"}'
 ```
 
-Note for local development: do **not** run `corepack pnpm --filter @bezzo/web build` while `next dev`
+Note for local development: do **not** run `npm run build --workspace=@bezzo/web` while `next dev`
 is running — both write `.next`, and the dev server starts returning 500 for every route until it is
 restarted. Stop the dev server (or use a separate build directory) first.

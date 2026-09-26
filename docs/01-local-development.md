@@ -8,12 +8,15 @@ This document records the exact, reproducible way to run BEZZO locally. It compl
 | Component | Version used in this environment | Notes |
 | --- | --- | --- |
 | Node.js | 22.x | `node --version` |
-| pnpm | 12.5.1 via `corepack pnpm` | the workspace pins the package manager |
+| npm | 10.8.2 | pinned by the root `packageManager` field |
 | PostgreSQL | 17.x | required — PostgreSQL is the transactional source of truth |
 | Redis | optional locally | when `REDIS_URL` is unset the platform runs an in-process cache fallback and reports it in `/health` |
 | OpenSearch | optional locally | when `SEARCH_ENABLED=false` the degraded database search path is used and reported in `/health` |
 
 Both fallbacks are deliberate degraded modes: the canonical data always lives in PostgreSQL.
+The committed `package-lock.json` is the dependency source of truth; run `npm ci` after checkout.
+The supported runtime is Node.js 22.15 or newer (the current workstation Node 20.19 is below the
+declared engine and cannot exercise Zstandard compression).
 
 ## 2. Configuration
 
@@ -33,11 +36,11 @@ Rules enforced by the code:
 ## 3. Database
 
 ```bash
-corepack pnpm db:migrate            # apply pending migrations (0013 + …)
-corepack pnpm db:status             # applied vs pending
-corepack pnpm db:seed               # reference + development seed data
-corepack pnpm db:verify             # schema, constraints and seed expectations
-corepack pnpm db:reset              # drop and recreate the schema (development only)
+npm run migrate --workspace=@bezzo/database
+npm run status --workspace=@bezzo/database
+npm run seed --workspace=@bezzo/database
+npm run verify --workspace=@bezzo/database
+npm run reset --workspace=@bezzo/database   # destructive: development only
 ```
 
 `DATABASE_URL` selects the environment database
@@ -57,10 +60,15 @@ Seeded development sign-ins (development seed only, never production):
 ## 4. Build and run
 
 ```bash
-corepack pnpm build                              # turbo: contracts → config → crypto → database → api → web
-corepack pnpm --filter @bezzo/api start          # node dist/main.js
+npm run build --workspace=@bezzo/contracts
+npm run build --workspace=@bezzo/config
+npm run build --workspace=@bezzo/crypto
+npm run build --workspace=@bezzo/database
+npm run build --workspace=@bezzo/api
+npm run build --workspace=@bezzo/web
+npm run start --workspace=@bezzo/api            # node dist/main.js
 # or, with reload on change:
-corepack pnpm --filter @bezzo/api dev
+npm run dev --workspace=@bezzo/api
 ```
 
 ### Web application (`apps/web`)
@@ -68,8 +76,8 @@ corepack pnpm --filter @bezzo/api dev
 Next.js 15 (App Router, React 19, TypeScript strict). It is a pure API consumer:
 
 ```bash
-corepack pnpm --filter @bezzo/web dev      # next dev -H 0.0.0.0 -p 3000
-corepack pnpm --filter @bezzo/web build    # production build (route-by-route type checking)
+npm run dev --workspace=@bezzo/web      # next dev -H 0.0.0.0 -p 3000
+npm run build --workspace=@bezzo/web    # production build (route-by-route type checking)
 ```
 
 | Variable | Default | Purpose |
@@ -119,10 +127,10 @@ in-process test would exercise a slightly different wiring than the one that shi
 curl -s http://127.0.0.1:4000/health
 
 # 2. run everything (~50 s: one test waits a full 30 s job cycle on purpose)
-corepack pnpm --filter @bezzo/api test:integration
+npm run test:integration --workspace=@bezzo/api
 
 # one file
-corepack pnpm --filter @bezzo/api test:integration -- test/security/rbac.spec.ts
+npm run test:integration --workspace=@bezzo/api -- test/security/rbac.spec.ts
 ```
 
 | File | What it proves |
@@ -151,7 +159,7 @@ is a negative one, that a committed reservation is *not* released, so it must ob
 ## 5. OpenAPI document
 
 ```bash
-corepack pnpm openapi:export        # writes apps/api/openapi/bezzo-api.json
+npm run openapi:export --workspace=@bezzo/api  # writes apps/api/openapi/bezzo-api.json
 ```
 
 The exporter builds the real module graph from `dist/`, so the document always matches the deployed

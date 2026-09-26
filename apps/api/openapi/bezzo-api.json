@@ -691,6 +691,177 @@
         ]
       }
     },
+    "/api/v1/supplier/fulfillments": {
+      "get": {
+        "operationId": "SuppliersController_listFulfillments",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List supplier fulfillments / incoming orders with status filtering and search",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/fulfillments/{fulfillmentId}": {
+      "get": {
+        "operationId": "SuppliersController_getFulfillment",
+        "parameters": [
+          {
+            "name": "fulfillmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Get fulfillment detail with order items, packages, timeline and pickup task",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/fulfillments/{fulfillmentId}/accept": {
+      "post": {
+        "operationId": "SuppliersController_acceptFulfillment",
+        "parameters": [
+          {
+            "name": "fulfillmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Accept incoming order / fulfillment",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/fulfillments/{fulfillmentId}/pack": {
+      "post": {
+        "operationId": "SuppliersController_packFulfillment",
+        "parameters": [
+          {
+            "name": "fulfillmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Pack order items and register physical packages",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/fulfillments/{fulfillmentId}/ready": {
+      "post": {
+        "operationId": "SuppliersController_readyFulfillment",
+        "parameters": [
+          {
+            "name": "fulfillmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Mark fulfillment ready for pickup and dispatch pickup task for collection",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
+    "/api/v1/supplier/fulfillments/{fulfillmentId}/reject": {
+      "post": {
+        "operationId": "SuppliersController_rejectFulfillment",
+        "parameters": [
+          {
+            "name": "fulfillmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Reject fulfillment and release reserved inventory units",
+        "tags": [
+          "supplier"
+        ]
+      }
+    },
     "/api/v1/catalog/categories": {
       "get": {
         "operationId": "CatalogController_categories",
@@ -1495,6 +1666,69 @@
         "summary": "Build and configuration metadata (no secrets)",
         "tags": [
           "platform"
+        ]
+      }
+    },
+    "/api/v1/picker/tasks": {
+      "get": {
+        "operationId": "PickerController_tasks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List available collection tasks and the picker’s active tasks",
+        "tags": [
+          "picker"
+        ]
+      }
+    },
+    "/api/v1/picker/heartbeat": {
+      "post": {
+        "operationId": "PickerController_heartbeat",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Update picker availability and current location",
+        "tags": [
+          "picker"
+        ]
+      }
+    },
+    "/api/v1/picker/tasks/{taskId}/accept": {
+      "post": {
+        "operationId": "PickerController_accept",
+        "parameters": [
+          {
+            "name": "taskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Atomically claim a collection task",
+        "tags": [
+          "picker"
         ]
       }
     }

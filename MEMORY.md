@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-24** (Flutter buyer registration/account flows expanded; see §2).
+Last updated: **2026-09-26** (initial picker API slice; see §2 and §6).
 
 ---
 
@@ -53,7 +53,7 @@ fix + integration tests + reservation commitment; see the commit body for the hi
 | 4 Marketplace: cart, checkout, orders | IMPLEMENTED |
 | 5 Fulfilment (supplier accept → pack → ready) | IMPLEMENTED (API + supplier workspace + integration coverage) |
 | 6 Payments (webhooks, capture, retry, refunds, reconciliation) | IMPLEMENTED (§2.2) |
-| 7 Picker system | NOT IMPLEMENTED |
+| 7 Picker system | PARTIALLY IMPLEMENTED: heartbeat, hub/capacity scoped task queue, atomic task claim |
 | 8 Delivery / Porter | NOT IMPLEMENTED (adapter exists) |
 | 9 Admin/backoffice | PARTIALLY IMPLEMENTED: partner-application queue + payments backoffice |
 | 10 Scale & hardening | NOT IMPLEMENTED |
@@ -77,6 +77,16 @@ request decompression is disabled. A Kubernetes API deployment template adds rea
 health probes, rolling updates, and autoscaling. Production infra values and cluster rollout are not yet
 configured. This Windows environment currently has Node 20.19, so the Zstandard runtime path cannot be
 verified here.
+
+**Picker Phase 7 (partial, 2026-09-26):** `apps/api/src/modules/picker` now exposes `POST
+/api/v1/picker/heartbeat`, `GET /api/v1/picker/tasks`, and `POST /api/v1/picker/tasks/:taskId/accept`.
+The queue is limited to a fresh/available picker’s home hub and package capacity, plus that picker’s
+active task. Claim is a conditional database update guarded by picker availability and capacity; it
+records a transactional event and audit row and updates availability. An OFFERED task can only be
+claimed by a picker holding its unexpired pending offer. Run/stop progression, package scans, hub
+receiving and picker UI remain outstanding. The API build and OpenAPI export passed after building
+shared workspace dependencies first. Picker runtime/integration behavior has not been exercised; no
+tests were run.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 
@@ -180,6 +190,22 @@ Sandbox limits worth remembering: **no browser binary** (curl and CSS/class audi
 (`REDIS_URL` unset → in-process cache fallback), `SEARCH_ENABLED=false` (degraded DB search path),
 `PAYMENTS_PROVIDER=mock`, `LOGISTICS_PROVIDER=manual`.
 
+### Current workspace correction (2026-09-26)
+
+The root `package.json` pins **npm 10.8.2**, not pnpm. Older command examples above using `corepack pnpm`
+are stale for this checkout. Build in dependency order with `npm run build --workspace=@bezzo/<name>`:
+contracts → config → crypto → database → api → web. The picker API/Nest build and OpenAPI export
+passed after first building those API dependencies. A root `package-lock.json` now locks the workspace
+dependency graph; use `npm ci`. System Node is v20.19, below the `>=22.15` package engine requirement
+and unable to verify the zstd runtime. Three picker routes are in
+`apps/api/openapi/bezzo-api.json`; no picker runtime/integration tests were run. Existing Android APK
+is a 154,774,238-byte **debug** artifact at
+`apps/mobile/build/app/outputs/flutter-apk/app-debug.apk`, SHA-256
+`EBB350319FFBCE30F33697F3AFFA063BF842862333722F8C7C0FB6909D54C1E2`. Two release attempts (AAB and
+ARM64 APK) compiled Dart/Android but failed at Gradle signing because `BEZZO_UPLOAD_*` credentials
+were not set. No production-signed APK/AAB exists; do not use a preview/debug signing key as a store
+release key.
+
 ---
 
 ## 4. How to verify — what each thing proves
@@ -245,10 +271,10 @@ exactly that.
 
 ## 6. Next work, in order
 
-1. **Phase 7 — picker system**: supplier fulfillment accept/pack/ready flows are implemented. Next:
-   pickup offer generation, **atomic claim** (two pickers must never claim
-   one task), run/stop progression, package scans with `local_event_id` idempotency, hub receiving with
-   duplicate/unexpected/discrepancy handling.
+1. **Phase 7 — picker system**: supplier fulfillment accept/pack/ready flows, picker heartbeat,
+   home-hub/capacity-scoped queue, and atomic task claim are implemented. Next: offer generation,
+   run/stop progression, package scans with `local_event_id` idempotency, hub receiving with
+   duplicate/unexpected/discrepancy handling, then picker UI. Build and verify this API slice first.
 2. **Phase 8 — delivery**: provider adapter call sites only (no Porter logic scattered in the app).
 3. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, missing/unexpected
