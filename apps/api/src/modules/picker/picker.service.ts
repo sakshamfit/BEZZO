@@ -15,6 +15,9 @@ import { AuditService } from '../../infrastructure/audit/audit.service';
 import { DomainError } from '../../common/errors/domain-error';
 import type { AuthenticatedActor } from '../../common/context/request-context';
 import { currentRequestId } from '../../common/context/request-context';
+import type { AppConfig } from '@bezzo/config';
+import { APP_CONFIG } from '../../infrastructure/config/config.module';
+import { NotificationService } from '../../infrastructure/notifications/notification.service';
 import type {
   CompletePickupInput,
   PickerHeartbeatInput,
@@ -64,7 +67,117 @@ export class PickerService {
     @Inject(DATABASE) private readonly database: DatabaseType,
     private readonly events: EventBusService,
     private readonly audit: AuditService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly notifications: NotificationService,
   ) {}
+
+  /** Expire timed-out offers and fan out the next ranked offers. The worker holds a DB advisory lock. */
+  async dispatchOffers(limit = 50): Promise<{ tasksProcessed: number; offersCreated: number }> {
+    return this.database.transaction(async (client) => {
+      await client.query(
+        `UPDATE pickup_offers SET outcome = 'EXPIRED', responded_at = now(), updated_at = now()
+          WHERE outcome = 'PENDING' AND expires_at <= now()`,
+      );
+      await client.query(
+        `UPDATE pickers p SET status = 'AVAILABLE', updated_at = now()
+          WHERE p.status = 'OFFERED' AND p.last_heartbeat_at >= now() - ($1 || ' seconds')::INTERVAL
+            AND NOT EXISTS (SELECT 1 FROM pickup_offers po WHERE po.picker_id = p.id AND po.outcome = 'PENDING' AND po.expires_at > now())
+            AND NOT EXISTS (SELECT 1 FROM pickup_tasks pt WHERE pt.assigned_picker_id = p.id
+                             AND pt.status IN ('ACCEPTED','EN_ROUTE','ARRIVED','COLLECTING','PICKED_UP','AT_HUB','HANDOVER_EXCEPTION'))`,
+        [this.config.PICKER_HEARTBEAT_STALE_SECONDS],
+      );
+      await client.query(
+        `UPDATE pickup_tasks pt SET status = 'EXPIRED', updated_at = now()
+          WHERE pt.status = 'OFFERED' AND pt.offer_expires_at <= now()
+            AND NOT EXISTS (SELECT 1 FROM pickup_offers po WHERE po.pickup_task_id = pt.id
+                              AND po.outcome = 'PENDING' AND po.expires_at > now())`,
+      );
+
+      const tasks = await client.query<{ id: string; task_code: string; status: string; priority: string; package_count: number; hub_id: string; supplier_id: string }>(
+        `SELECT pt.id, pt.task_code, pt.status, pt.priority, pt.package_count, pt.hub_id, pt.supplier_id
+           FROM pickup_tasks pt JOIN suppliers s ON s.id = pt.supplier_id
+          WHERE pt.status IN ('CREATED','EXPIRED','REJECTED') AND pt.assigned_picker_id IS NULL
+            AND pt.hub_id IS NOT NULL AND s.pickup_latitude IS NOT NULL AND s.pickup_longitude IS NOT NULL
+            AND (pt.pickup_window_start IS NULL OR pt.pickup_window_start <= now() + interval '30 minutes')
+            AND EXISTS (SELECT 1 FROM pickup_task_orders pto WHERE pto.pickup_task_id = pt.id AND pto.status = 'ACTIVE')
+          ORDER BY CASE pt.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END,
+                   pt.pickup_window_end NULLS LAST, pt.created_at
+          LIMIT $1`,
+        [limit],
+      );
+      let offersCreated = 0;
+      for (const task of tasks.rows) {
+        const existing = await client.query<{ count: number }>(
+          `SELECT count(*)::INT AS count FROM pickup_offers WHERE pickup_task_id = $1 AND outcome = 'PENDING' AND expires_at > now()`,
+          [task.id],
+        );
+        if ((existing.rows[0]?.count ?? 0) > 0) continue;
+
+        const matchCount = this.config.PICKER_ALLOW_PARALLEL_OFFERS && ['URGENT', 'HIGH'].includes(task.priority)
+          ? Math.max(1, this.config.PICKER_PARALLEL_OFFER_COUNT) : 1;
+        const candidates = await client.query<{ id: string; user_id: string; distance_km: number }>(
+          `SELECT p.id, p.user_id, bezzo_haversine_km(p.current_latitude, p.current_longitude,
+                    s.pickup_latitude, s.pickup_longitude)::FLOAT8 AS distance_km
+             FROM pickers p JOIN suppliers s ON s.id = $2
+            WHERE p.status = 'AVAILABLE' AND p.home_hub_id = $3
+              AND p.last_heartbeat_at >= now() - ($4 || ' seconds')::INTERVAL
+              AND p.capacity_packages >= $5 AND p.current_latitude IS NOT NULL AND p.current_longitude IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM pickup_tasks active WHERE active.assigned_picker_id = p.id
+                               AND active.status IN ('ACCEPTED','EN_ROUTE','ARRIVED','COLLECTING','PICKED_UP','AT_HUB','HANDOVER_EXCEPTION'))
+              AND NOT EXISTS (SELECT 1 FROM pickup_offers po WHERE po.pickup_task_id = $1 AND po.picker_id = p.id
+                               AND po.outcome = 'PENDING' AND po.expires_at > now())
+              AND NOT EXISTS (SELECT 1 FROM pickup_offers po WHERE po.picker_id = p.id
+                               AND po.outcome = 'PENDING' AND po.expires_at > now())
+              AND bezzo_haversine_km(p.current_latitude, p.current_longitude, s.pickup_latitude, s.pickup_longitude) <= $6
+            ORDER BY distance_km ASC, p.last_heartbeat_at DESC
+            LIMIT $7 FOR UPDATE OF p SKIP LOCKED`,
+          [task.id, task.supplier_id, task.hub_id, this.config.PICKER_HEARTBEAT_STALE_SECONDS,
+            task.package_count, this.config.PICKER_ASSIGNMENT_RADIUS_KM, matchCount],
+        );
+        if (candidates.rows.length === 0) continue;
+
+        const expiresAtSeconds = Math.max(5, this.config.PICKER_OFFER_TIMEOUT_SECONDS);
+        const offered = await client.query(
+          `UPDATE pickup_tasks SET status = 'OFFERED', offered_at = now(), last_offered_at = now(),
+                  offer_expires_at = now() + ($2 || ' seconds')::INTERVAL,
+                  offer_count = offer_count + $3, updated_at = now()
+            WHERE id = $1 AND status IN ('CREATED','EXPIRED','REJECTED') AND assigned_picker_id IS NULL`,
+          [task.id, expiresAtSeconds, candidates.rows.length],
+        );
+        if ((offered.rowCount ?? 0) === 0) continue;
+        for (let index = 0; index < candidates.rows.length; index += 1) {
+          const picker = candidates.rows[index]!;
+          const minutes = Math.max(1, Math.ceil((picker.distance_km / 20) * 60));
+          await client.query(
+            `INSERT INTO pickup_offers (pickup_task_id, picker_id, distance_km, estimated_travel_minutes, score, rank, expires_at)
+             VALUES ($1,$2,$3,$4,$5,$6,now() + ($7 || ' seconds')::INTERVAL)`,
+            [task.id, picker.id, picker.distance_km, minutes, (100 - picker.distance_km) - index, index + 1, expiresAtSeconds],
+          );
+          await client.query(`UPDATE pickers SET status = 'OFFERED', updated_at = now() WHERE id = $1 AND status = 'AVAILABLE'`, [picker.id]);
+          await this.notifications.queue(client, {
+            userId: picker.user_id,
+            type: 'picker.task_offer',
+            title: `Pickup ${task.task_code} available`,
+            body: `${task.package_count} packages · ${picker.distance_km.toFixed(1)} km away. Accept before the offer expires.`,
+            channels: ['IN_APP'],
+            referenceType: 'pickup_task',
+            referenceId: task.id,
+            payload: { taskId: task.id, taskCode: task.task_code, expiresInSeconds: expiresAtSeconds },
+          });
+        }
+        await this.events.emit(client, {
+          eventName: 'PickupTaskOffered', aggregateType: 'pickup_task', aggregateId: task.id,
+          payload: { taskId: task.id, taskCode: task.task_code, pickerIds: candidates.rows.map(({ id }) => id), expiresInSeconds: expiresAtSeconds },
+        });
+        await this.audit.record(client, {
+          action: 'picker.task_offered', resourceType: 'pickup_task', resourceId: task.id,
+          metadata: { pickerIds: candidates.rows.map(({ id }) => id), expiresInSeconds: expiresAtSeconds },
+        });
+        offersCreated += candidates.rows.length;
+      }
+      return { tasksProcessed: tasks.rows.length, offersCreated };
+    });
+  }
 
   async heartbeat(actor: AuthenticatedActor, input: PickerHeartbeatInput) {
     const pickerId = this.requirePicker(actor);
@@ -641,7 +754,7 @@ export class PickerService {
                   SELECT 1 FROM pickup_offers po WHERE po.pickup_task_id = pt.id AND po.picker_id = p.id
                     AND po.outcome = 'PENDING' AND po.expires_at > now()
                 ))) AND pt.assigned_picker_id IS NULL
-                AND p.status = 'AVAILABLE' AND p.last_heartbeat_at > now() - interval '5 minutes'
+                AND p.status IN ('AVAILABLE','OFFERED') AND p.last_heartbeat_at > now() - interval '5 minutes'
                 AND pt.package_count <= p.capacity_packages AND pt.hub_id = p.home_hub_id)
            OR (pt.assigned_picker_id = $1 AND pt.status IN ('ACCEPTED','EN_ROUTE','ARRIVED','COLLECTING','PICKED_UP','AT_HUB','HANDOVER_EXCEPTION'))
               )
@@ -668,8 +781,12 @@ export class PickerService {
       const picker = pickerResult.rows[0];
       if (!picker)
         throw DomainError.notFound(ErrorCode.PICKER_NOT_FOUND, 'Picker profile was not found');
+      const hasLiveOffer = picker.status === 'OFFERED' && (await client.query(
+        `SELECT EXISTS (SELECT 1 FROM pickup_offers WHERE pickup_task_id = $1 AND picker_id = $2
+          AND outcome = 'PENDING' AND expires_at > now()) AS exists`, [taskId, pickerId],
+      )).rows[0]?.exists === true;
       if (
-        picker.status !== 'AVAILABLE' ||
+        (picker.status !== 'AVAILABLE' && !hasLiveOffer) ||
         !picker.last_heartbeat_at ||
         Date.now() - picker.last_heartbeat_at.getTime() > 5 * 60_000
       ) {

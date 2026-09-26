@@ -270,10 +270,11 @@ exactly that.
 
 ## 6. Next work, in order
 
-1. **Phase 7 — picker system**: supplier fulfillment accept/pack/ready flows, picker heartbeat,
-   hub/capacity queue, atomic claim, arrival/start, replay-safe scans and full/partial pickup
-   completion are implemented. Next: offer generation, runs/stops, hub handover and receiving with
-   duplicate/unexpected/discrepancy handling, then picker UI.
+1. **Phase 7 — picker system**: supplier fulfillment accept/pack/ready flows, heartbeat, hub/capacity
+   queue, scheduled hub/distance/capacity/freshness-matched timed offers with in-app notices, atomic
+   claim, arrival/start, replay-safe scans and full/partial completion are implemented. API build
+   passes; offer SQL behavior still needs live-database verification. Next: runs/stops and hub handover
+   and receiving with duplicate/unexpected/discrepancy handling, then picker UI.
 2. **Phase 8 — delivery**: provider adapter call sites only (no Porter logic scattered in the app).
 3. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, missing/unexpected

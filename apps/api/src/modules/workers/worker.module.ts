@@ -6,15 +6,15 @@
  * horizontally safe: every job is idempotent and lock-guarded. When the platform grows, the same job
  * definitions can be lifted onto a dedicated worker deployment without changing handlers.
  *
- * Jobs registered here (Phase 1–3 scope):
+ * Jobs registered here:
  *  - outbox.dispatch            — deliver domain events to registered handlers (retry + DLQ)
  *  - notifications.dispatch     — send queued push/SMS/email/in-app notifications
  *  - search.index               — project queued `search_index_jobs` rows into OpenSearch
  *  - idempotency.purge          — delete expired idempotency records
  *  - reservations.expire        — release inventory reservations whose TTL elapsed
  *
- * Picker/delivery/payment jobs (offer expiry, run assignment, PORTER reconciliation, settlement
- * generation) are registered by their own modules when those phases ship.
+ * Picker offers are dispatched here; later picker run/stop, hub handover, delivery reconciliation,
+ * and settlement jobs will be added as those workflows are implemented.
  */
 import { Inject, Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import type { AppConfig } from '@bezzo/config';
@@ -30,6 +30,8 @@ import { AuditService } from '../../infrastructure/audit/audit.service';
 import { MetricsService } from '../../infrastructure/metrics/metrics.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { PaymentsService } from '../payments/payments.service';
+import { PickerModule } from '../picker/picker.module';
+import { PickerService } from '../picker/picker.service';
 import { InjectLogger, BEZZO_LOGGER, type BezzoLogger } from '../../infrastructure/logger/logger.module';
 
 /** Anything that can run a query: the pool or the transaction client. */
@@ -41,6 +43,7 @@ const SEARCH_INDEX_INTERVAL_MS = 15_000;
 const IDEMPOTENCY_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const RESERVATION_EXPIRY_INTERVAL_MS = 30_000;
 const PAYMENT_RECONCILE_INTERVAL_MS = 60_000;
+const PICKUP_OFFER_INTERVAL_MS = 5_000;
 
 @Injectable()
 export class WorkerJobs implements OnModuleInit {
@@ -55,6 +58,7 @@ export class WorkerJobs implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly metrics: MetricsService,
     private readonly payments: PaymentsService,
+    private readonly picker: PickerService,
     @InjectLogger() private readonly logger: BezzoLogger,
   ) {}
 
@@ -124,6 +128,17 @@ export class WorkerJobs implements OnModuleInit {
       handler: async () => {
         const outcome = await this.payments.reconcileStalePayments();
         return { itemsProcessed: outcome.checked, itemsFailed: outcome.failed, applied: outcome.applied };
+      },
+    });
+
+    this.scheduler.register({
+      name: 'picker.offers.dispatch',
+      intervalMs: PICKUP_OFFER_INTERVAL_MS,
+      lockKey: 0x0b2_0007,
+      runOnStart: true,
+      handler: async () => {
+        const result = await this.picker.dispatchOffers(this.config.WORKER_BATCH_SIZE);
+        return { itemsProcessed: result.tasksProcessed, offersCreated: result.offersCreated };
       },
     });
 
@@ -421,7 +436,7 @@ export class WorkerJobs implements OnModuleInit {
 @Module({
   // The reconciliation job runs the payment module's own transition code rather than re-implementing
   // "what does the provider say" in the worker.
-  imports: [PaymentsModule],
+  imports: [PaymentsModule, PickerModule],
   providers: [WorkerJobs],
 })
 export class WorkerModule {}

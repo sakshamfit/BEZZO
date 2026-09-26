@@ -441,7 +441,7 @@ inventory violates `reserved_quantity <= available_quantity`.
 | Partner-application outbound WhatsApp (Bezzo's own business number) | REQUIRES EXTERNAL CREDENTIALS | Today the applicant's WhatsApp sends the prefilled message; `delivery_channel` is `WHATSAPP_HANDOFF`. A WhatsApp Cloud API token + verified sender would let the platform deliver it directly (`delivery_channel = API`). |
 | Self-hosted webfonts | REQUIRES CONFIGURATION | The root layout loads Plus Jakarta Sans / Space Mono from the Google Fonts CDN with a system-font fallback; the sandbox cannot reach that CDN. Self-hosting is a two-file change (`public/fonts` + `@font-face`) and is preferred for production. |
 | Payment webhook endpoint + reconciliation | IMPLEMENTED | `POST /api/v1/webhooks/payments/:provider` verifies the HMAC over the raw bytes, stores the call as evidence before interpreting it, deduplicates on `(gateway, external_event_id)` and applies one shared transition; `payments.reconcile` polls the provider every 60 s for anything the webhook never delivered. |
-| Picker pickup / hub receiving / delivery flows | PARTIALLY IMPLEMENTED | Phase 7 has picker heartbeat, hub/capacity-scoped task list, atomic claim, supplier arrival, collection start, replay-safe scans and full/partial completion with follow-up tasks. Offer generation, runs/stops, hub package receipt and Phase 8 retailer delivery remain. |
+| Picker pickup / hub receiving / delivery flows | PARTIALLY IMPLEMENTED | Phase 7 has picker heartbeat, hub/capacity-scoped task list, atomic claims, scheduled time-limited offers matched by hub, distance, capacity and fresh heartbeat, in-app offer notices, supplier arrival, collection start, replay-safe scans, and full/partial completion with follow-up tasks. Runs/stops, hub package receipt and Phase 8 retailer delivery remain. API build passes; database-backed offer behavior has not been exercised against a live DB. |
 | Admin & backoffice (verification queues, disputes, settlements) | NOT IMPLEMENTED | Phase 9. |
 | Analytics & reporting, promotions (`0014_promotions.sql`) | NOT IMPLEMENTED | Promotions migration is planned but not written; do not invent promotion rules without the spec. |
 | Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer client has buyer registration with email/phone verification, password/OTP sign-in, secure session storage, `/me` restoration, shared refresh-on-401, live catalog/category search, per-supplier offers, server cart, scheduled delivery quote, COD checkout, order history/details/cancellation, buyer business-profile editing, and compliance document upload/view/removal. Online payment handoff, push notifications, production signing/API configuration, direct-to-storage document uploads, and device-matrix verification remain. Flutter analyze and Android debug APK build pass. |
@@ -455,8 +455,8 @@ inventory violates `reserved_quantity <= available_quantity`.
 
 ## 7. Next steps (in order)
 
-1. Picker slice (Phase 7): offer generation, run/stop progression and hub receiving with
-   duplicate/unexpected handling. Heartbeat, queue, claim, scan and pickup completion APIs exist.
+1. Picker slice (Phase 7): run/stop progression and hub receiving with duplicate/unexpected handling.
+   Heartbeat, offer generation, queue, claim, scan and pickup completion APIs exist.
 2. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, hub discrepancy.
    (Duplicate payment webhook, forged signature, refunds, RBAC and reservation commitment are covered.)
