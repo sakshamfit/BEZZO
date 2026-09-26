@@ -754,7 +754,7 @@ export class PickerService {
                   SELECT 1 FROM pickup_offers po WHERE po.pickup_task_id = pt.id AND po.picker_id = p.id
                     AND po.outcome = 'PENDING' AND po.expires_at > now()
                 ))) AND pt.assigned_picker_id IS NULL
-                AND p.status IN ('AVAILABLE','OFFERED') AND p.last_heartbeat_at > now() - interval '5 minutes'
+                AND p.status IN ('AVAILABLE','OFFERED') AND p.last_heartbeat_at > now() - ($2 || ' seconds')::INTERVAL
                 AND pt.package_count <= p.capacity_packages AND pt.hub_id = p.home_hub_id)
            OR (pt.assigned_picker_id = $1 AND pt.status IN ('ACCEPTED','EN_ROUTE','ARRIVED','COLLECTING','PICKED_UP','AT_HUB','HANDOVER_EXCEPTION'))
               )
@@ -762,7 +762,7 @@ export class PickerService {
                  CASE pt.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END,
                  pt.pickup_window_end NULLS LAST, pt.created_at
         LIMIT 100`,
-      [pickerId],
+      [pickerId, this.config.PICKER_HEARTBEAT_STALE_SECONDS],
     );
     return { items: rows.map((row) => this.toSummary(row)) };
   }
@@ -788,7 +788,7 @@ export class PickerService {
       if (
         (picker.status !== 'AVAILABLE' && !hasLiveOffer) ||
         !picker.last_heartbeat_at ||
-        Date.now() - picker.last_heartbeat_at.getTime() > 5 * 60_000
+        Date.now() - picker.last_heartbeat_at.getTime() > this.config.PICKER_HEARTBEAT_STALE_SECONDS * 1_000
       ) {
         throw DomainError.conflict(
           ErrorCode.PICKER_NOT_AVAILABLE,
