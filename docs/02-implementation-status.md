@@ -59,7 +59,7 @@ fulfilled — closes the unpaid order with it (see §5.2).
 | 4 | Marketplace: cart, checkout, orders, payments | Cart + quote + order placement + cancellation + reservation commitment/expiry **IMPLEMENTED** (web `/cart`, `/checkout`, `/orders`, `/orders/[orderId]`); payment capture, webhooks, retry and refunds **IMPLEMENTED** (Phase 6 below) |
 | 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | Supplier fulfillment list/detail, accept/reject, pack and ready-for-pickup are **IMPLEMENTED** (API, web workspace, integration coverage); picker pickup remains Phase 7 |
 | 6 | Payments: abstraction, server verification, webhooks, reconciliation | **IMPLEMENTED** end to end: provider abstraction (mock + razorpay; cashfree adapter **NOT IMPLEMENTED**), signed webhook intake with evidence + replay protection, capture → order confirmation, buyer retry, admin full/partial refunds, reconciliation poll, buyer payment UI and `/admin/payments` backoffice. Live-gateway checkout UI and settlement payouts **REQUIRES EXTERNAL CREDENTIALS** / later phase |
-| 7 | Picker system: offers, atomic claim, runs, stops, package scans, hub receiving | **PARTIALLY IMPLEMENTED**: heartbeat/availability, home-hub and capacity scoped task queue, atomic claim, supplier arrival, collection start, package list/scans, offline scan replay, unexpected-package exceptions, full/partial reconciliation and follow-up pickup tasks are in the API; offer generation, runs/stops, hub receiving and picker UI remain **NOT IMPLEMENTED** |
+| 7 | Picker system: offers, atomic claim, runs, stops, package scans, hub receiving | **PARTIALLY IMPLEMENTED**: heartbeat/availability, home-hub and capacity scoped task queue, timed matched offers, atomic claim, supplier arrival, collection start, package list/scans, offline replay, full/partial reconciliation, follow-up pickup tasks, hub scan/reconciliation and task handover are in the API; runs/stops and picker UI remain **NOT IMPLEMENTED** |
 | 8 | Delivery: hub → retailer, Porter adapter, slots, tracking | Logistics adapter **IMPLEMENTED**; delivery flow **NOT IMPLEMENTED** |
 | 9 | Admin / backoffice: verification queues, disputes, settlements, analytics | **PARTIALLY IMPLEMENTED**: partner-application queue (`/admin/applications`) and the payments backoffice (`/admin/payments`: search, evidence trail, refunds). Verification queues, disputes, settlements and analytics are **NOT IMPLEMENTED** |
 | 10 | Scale & hardening: load tests, DR, autoscaling, WAF | **NOT IMPLEMENTED** |
@@ -105,13 +105,15 @@ fallback), notifications (IN_APP guaranteed, unconfigured channels fail rather t
 
 Picker API (`/api/v1/picker`): availability heartbeat, hub/capacity scoped task queue, transactional
 task claim and fulfillment assignment, supplier arrival, collection start, task package list, and
-package scanning and full/partial pickup reconciliation are implemented. Scans use server-side
+package scanning and full/partial pickup reconciliation are implemented. The worker issues expiring,
+distance/capacity/hub matched offers with in-app notices. Hub operations use `/api/v1/hubs/:hubId/receivings`
+to open a receiving session, record package scans, and complete clean or acknowledged-discrepancy handovers.
+Scans use server-side
 package/task ownership checks, conditional collection writes and offline `localEventId`
 deduplication. Unexpected/wrong packages create a pickup exception without exposing another task’s
 package details. Partial pickups record missing packages/reason and create a follow-up task. Actions
-write audit/domain events. Offer generation, runs/stops, hub receiving and picker UI remain absent.
-The API TypeScript/Nest build and OpenAPI export passed; picker runtime/integration behavior has not
-been exercised against the API and database.
+write audit/domain events. Runs/stops and picker UI remain absent. TypeScript/Nest build passed;
+hub/offer behavior has not been exercised against a live database or end-to-end API.
 
 | Module | Endpoints | Notes |
 | --- | --- | --- |
@@ -441,7 +443,7 @@ inventory violates `reserved_quantity <= available_quantity`.
 | Partner-application outbound WhatsApp (Bezzo's own business number) | REQUIRES EXTERNAL CREDENTIALS | Today the applicant's WhatsApp sends the prefilled message; `delivery_channel` is `WHATSAPP_HANDOFF`. A WhatsApp Cloud API token + verified sender would let the platform deliver it directly (`delivery_channel = API`). |
 | Self-hosted webfonts | REQUIRES CONFIGURATION | The root layout loads Plus Jakarta Sans / Space Mono from the Google Fonts CDN with a system-font fallback; the sandbox cannot reach that CDN. Self-hosting is a two-file change (`public/fonts` + `@font-face`) and is preferred for production. |
 | Payment webhook endpoint + reconciliation | IMPLEMENTED | `POST /api/v1/webhooks/payments/:provider` verifies the HMAC over the raw bytes, stores the call as evidence before interpreting it, deduplicates on `(gateway, external_event_id)` and applies one shared transition; `payments.reconcile` polls the provider every 60 s for anything the webhook never delivered. |
-| Picker pickup / hub receiving / delivery flows | PARTIALLY IMPLEMENTED | Phase 7 has picker heartbeat, hub/capacity-scoped task list, atomic claims, scheduled time-limited offers matched by hub, distance, capacity and fresh heartbeat, in-app offer notices, supplier arrival, collection start, replay-safe scans, and full/partial completion with follow-up tasks. Runs/stops, hub package receipt and Phase 8 retailer delivery remain. API build passes; database-backed offer behavior has not been exercised against a live DB. |
+| Picker pickup / hub receiving / delivery flows | PARTIALLY IMPLEMENTED | Phase 7 has picker heartbeat, hub/capacity-scoped task list, atomic claims, scheduled time-limited offers matched by hub, distance, capacity and fresh heartbeat, in-app offer notices, supplier arrival, collection start, replay-safe scans, full/partial completion with follow-up tasks, and hub receiving scans/reconciliation/handover. Runs/stops and Phase 8 retailer delivery remain. API build passes; database-backed behavior has not been exercised against a live DB. |
 | Admin & backoffice (verification queues, disputes, settlements) | NOT IMPLEMENTED | Phase 9. |
 | Analytics & reporting, promotions (`0014_promotions.sql`) | NOT IMPLEMENTED | Promotions migration is planned but not written; do not invent promotion rules without the spec. |
 | Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer client has buyer registration with email/phone verification, password/OTP sign-in, secure session storage, `/me` restoration, shared refresh-on-401, live catalog/category search, per-supplier offers, server cart, scheduled delivery quote, COD checkout, order history/details/cancellation, buyer business-profile editing, and compliance document upload/view/removal. Online payment handoff, push notifications, production signing/API configuration, direct-to-storage document uploads, and device-matrix verification remain. Flutter analyze and Android debug APK build pass. |
@@ -455,8 +457,8 @@ inventory violates `reserved_quantity <= available_quantity`.
 
 ## 7. Next steps (in order)
 
-1. Picker slice (Phase 7): run/stop progression and hub receiving with duplicate/unexpected handling.
-   Heartbeat, offer generation, queue, claim, scan and pickup completion APIs exist.
+1. Picker slice (Phase 7): run/stop progression and picker UI. Hub receiving with duplicate,
+   unexpected, damaged and missing package reconciliation now has APIs; verify against PostgreSQL.
 2. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, hub discrepancy.
    (Duplicate payment webhook, forged signature, refunds, RBAC and reservation commitment are covered.)

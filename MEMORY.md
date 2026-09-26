@@ -79,13 +79,14 @@ configured. This Windows environment currently has Node 20.19, so the Zstandard 
 verified here.
 
 **Picker Phase 7 (partial, 2026-09-26):** `apps/api/src/modules/picker` exposes heartbeat, a
-hub/capacity scoped queue, atomic claim, arrival, collection start, package listing/scan and pickup
-completion. Claims update linked fulfillments transactionally; scans enforce package/task ownership,
-deduplicate offline `localEventId`s, record audit/domain events, and create exceptions for
-wrong/unexpected packages without exposing another task’s package details. Partial completion checks
-the missing list/reason and creates a follow-up task. Offer generation, runs/stops, hub receiving and
-picker UI remain outstanding. API build and OpenAPI export passed; picker runtime/integration behavior
-has not been exercised. No tests were run.
+hub/capacity scoped queue, scheduled expiring offers matched by hub/distance/capacity/fresh heartbeat,
+atomic claim, arrival, collection, package scans, and full/partial pickup completion. Claims update
+linked fulfillments transactionally; scans enforce package/task ownership and replay-safe local IDs.
+`apps/api/src/modules/hub-receiving` opens task handovers, records accepted/duplicate/unexpected/wrong-
+hub/damaged/unreadable scans, and reconciles missing packages before task completion. Clean handovers
+advance eligible fulfillments/packages to hub/delivery readiness. API build and OpenAPI export pass;
+database-backed offer and receiving behavior has not been exercised. Runs/stops, discrepancy resolution,
+picker UI and end-to-end coverage remain. No tests were run.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 
@@ -272,9 +273,9 @@ exactly that.
 
 1. **Phase 7 — picker system**: supplier fulfillment accept/pack/ready flows, heartbeat, hub/capacity
    queue, scheduled hub/distance/capacity/freshness-matched timed offers with in-app notices, atomic
-   claim, arrival/start, replay-safe scans and full/partial completion are implemented. API build
-   passes; offer SQL behavior still needs live-database verification. Next: runs/stops and hub handover
-   and receiving with duplicate/unexpected/discrepancy handling, then picker UI.
+   claim, arrival/start, replay-safe scans, full/partial completion, and operations hub receiving
+   scans/reconciliation are implemented. API build/OpenAPI export pass; offer and receiving SQL need
+   live-database verification. Next: runs/stops, discrepancy resolution, and picker UI.
 2. **Phase 8 — delivery**: provider adapter call sites only (no Porter logic scattered in the app).
 3. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, missing/unexpected

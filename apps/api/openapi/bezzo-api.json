@@ -1887,6 +1887,127 @@
           "picker"
         ]
       }
+    },
+    "/api/v1/hubs/{hubId}/receivings": {
+      "get": {
+        "operationId": "HubReceivingController_list",
+        "parameters": [
+          {
+            "name": "hubId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List recent handovers received at a collection hub",
+        "tags": [
+          "hub receiving"
+        ]
+      },
+      "post": {
+        "operationId": "HubReceivingController_start",
+        "parameters": [
+          {
+            "name": "hubId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Open a receiving session for a collected pickup task",
+        "tags": [
+          "hub receiving"
+        ]
+      }
+    },
+    "/api/v1/hubs/{hubId}/receivings/{receivingId}/scans": {
+      "post": {
+        "operationId": "HubReceivingController_scan",
+        "parameters": [
+          {
+            "name": "receivingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Scan and classify an expected, unexpected or damaged package",
+        "tags": [
+          "hub receiving"
+        ]
+      }
+    },
+    "/api/v1/hubs/{hubId}/receivings/{receivingId}/complete": {
+      "post": {
+        "operationId": "HubReceivingController_complete",
+        "parameters": [
+          {
+            "name": "receivingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Reconcile missing packages and complete a hub handover",
+        "tags": [
+          "hub receiving"
+        ]
+      }
     }
   },
   "info": {

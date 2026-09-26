@@ -55,6 +55,7 @@ import { PlatformModule } from './modules/platform/platform.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkerModule } from './modules/workers/worker.module';
 import { PickerModule } from './modules/picker/picker.module';
+import { HubReceivingModule } from './modules/hub-receiving/hub-receiving.module';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { PickerModule } from './modules/picker/picker.module';
     UsersModule,
     PlatformModule,
     PickerModule,
+    HubReceivingModule,
 
     // Background workers (no-op when WORKER_ENABLED=false)
     WorkerModule,
