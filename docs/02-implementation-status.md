@@ -441,13 +441,13 @@ inventory violates `reserved_quantity <= available_quantity`.
 | Partner-application outbound WhatsApp (Bezzo's own business number) | REQUIRES EXTERNAL CREDENTIALS | Today the applicant's WhatsApp sends the prefilled message; `delivery_channel` is `WHATSAPP_HANDOFF`. A WhatsApp Cloud API token + verified sender would let the platform deliver it directly (`delivery_channel = API`). |
 | Self-hosted webfonts | REQUIRES CONFIGURATION | The root layout loads Plus Jakarta Sans / Space Mono from the Google Fonts CDN with a system-font fallback; the sandbox cannot reach that CDN. Self-hosting is a two-file change (`public/fonts` + `@font-face`) and is preferred for production. |
 | Payment webhook endpoint + reconciliation | IMPLEMENTED | `POST /api/v1/webhooks/payments/:provider` verifies the HMAC over the raw bytes, stores the call as evidence before interpreting it, deduplicates on `(gateway, external_event_id)` and applies one shared transition; `payments.reconcile` polls the provider every 60 s for anything the webhook never delivered. |
-| Picker pickup / hub receiving / delivery flows | NOT IMPLEMENTED | Phases 7–8. Supplier fulfillment accept/pack/ready is implemented; picker claiming, hub package receipt and retailer delivery are not. |
+| Picker pickup / hub receiving / delivery flows | PARTIALLY IMPLEMENTED | Phase 7 has picker heartbeat, hub/capacity-scoped task list, atomic claim, supplier arrival, collection start, replay-safe scans and full/partial completion with follow-up tasks. Offer generation, runs/stops, hub package receipt and Phase 8 retailer delivery remain. |
 | Admin & backoffice (verification queues, disputes, settlements) | NOT IMPLEMENTED | Phase 9. |
 | Analytics & reporting, promotions (`0014_promotions.sql`) | NOT IMPLEMENTED | Promotions migration is planned but not written; do not invent promotion rules without the spec. |
 | Mobile app (`apps/mobile`) | PARTIALLY IMPLEMENTED | Flutter/Dart buyer client has buyer registration with email/phone verification, password/OTP sign-in, secure session storage, `/me` restoration, shared refresh-on-401, live catalog/category search, per-supplier offers, server cart, scheduled delivery quote, COD checkout, order history/details/cancellation, buyer business-profile editing, and compliance document upload/view/removal. Online payment handoff, push notifications, production signing/API configuration, direct-to-storage document uploads, and device-matrix verification remain. Flutter analyze and Android debug APK build pass. |
 | API response compression | IMPLEMENTED (runtime requirement) | API negotiates Zstandard on Node.js 22.15+, then Brotli, then gzip for textual payloads ≥1 KB. Request decompression stays disabled. Runtime/build verification is pending the required Node.js 22.15 toolchain. |
 | API load balancing | PARTIALLY IMPLEMENTED | `infra/kubernetes/api.yaml` defines 3+ ready API replicas, Service/Ingress balancing, health probes, TLS-secret reference, disruption budget, graceful updates, and CPU/memory HPA. Production cluster, image, host, secrets, managed LB/WAF/CDN, and TLS certificate still require operator configuration. |
-| Test suites | PARTIALLY IMPLEMENTED | `pnpm --filter @bezzo/api test:integration` runs 21 black-box tests against a booted API (RBAC negative matrix, payments critical scenarios, reservation commitment) — 21/21 green and mutation-checked. Unit, contract, load, mobile and the remaining concurrency scenarios are still **NOT IMPLEMENTED**. |
+| Test suites | PARTIALLY IMPLEMENTED | `npm run test:integration --workspace=@bezzo/api` runs 21 black-box tests against a booted API (RBAC negative matrix, payments critical scenarios, reservation commitment) — 21/21 green and mutation-checked. Unit, contract, load, mobile and the remaining concurrency scenarios are still **NOT IMPLEMENTED**. |
 | Redis / OpenSearch / S3 in this environment | REQUIRES CONFIGURATION | Fallbacks are intentional and reported by `/health`; production must set `REDIS_URL`, `SEARCH_ENABLED=true`, storage credentials. |
 | Razorpay / Porter live keys | REQUIRES EXTERNAL CREDENTIALS | Boot refuses to start Razorpay without credentials rather than silently degrading. |
 | Push notifications (FCM/APNs) | REQUIRES EXTERNAL CREDENTIALS | In-app channel works; unconfigured channels are recorded as FAILED/DEAD_LETTER. |
@@ -455,8 +455,8 @@ inventory violates `reserved_quantity <= available_quantity`.
 
 ## 7. Next steps (in order)
 
-1. Picker slice (Phase 7): offer generation, atomic claim, run/stop progression, package scans with
-   `local_event_id` idempotency, hub receiving with duplicate/unexpected handling.
+1. Picker slice (Phase 7): offer generation, run/stop progression and hub receiving with
+   duplicate/unexpected handling. Heartbeat, queue, claim, scan and pickup completion APIs exist.
 2. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, hub discrepancy.
    (Duplicate payment webhook, forged signature, refunds, RBAC and reservation commitment are covered.)
