@@ -53,7 +53,7 @@ fix + integration tests + reservation commitment; see the commit body for the hi
 | 4 Marketplace: cart, checkout, orders | IMPLEMENTED |
 | 5 Fulfilment (supplier accept → pack → ready) | IMPLEMENTED (API + supplier workspace + integration coverage) |
 | 6 Payments (webhooks, capture, retry, refunds, reconciliation) | IMPLEMENTED (§2.2) |
-| 7 Picker system | PARTIALLY IMPLEMENTED: heartbeat, hub/capacity queue, atomic claim, arrival/start, package scans |
+| 7 Picker system | PARTIALLY IMPLEMENTED: heartbeat, scoped queue, atomic claim, arrival/start, scans, full/partial completion |
 | 8 Delivery / Porter | NOT IMPLEMENTED (adapter exists) |
 | 9 Admin/backoffice | PARTIALLY IMPLEMENTED: partner-application queue + payments backoffice |
 | 10 Scale & hardening | NOT IMPLEMENTED |
@@ -79,12 +79,13 @@ configured. This Windows environment currently has Node 20.19, so the Zstandard 
 verified here.
 
 **Picker Phase 7 (partial, 2026-09-26):** `apps/api/src/modules/picker` exposes heartbeat, a
-hub/capacity scoped queue, atomic claim, arrival, collection start, package listing and scan. Claims
-update linked fulfillments transactionally; scans enforce package/task ownership, deduplicate offline
-`localEventId`s, record audit/domain events, and create exceptions for wrong/unexpected packages
-without exposing another task’s package details. Pickup completion, offer generation, runs/stops, hub
-receiving and picker UI remain outstanding. API build and OpenAPI export passed; picker
-runtime/integration behavior has not been exercised. No tests were run.
+hub/capacity scoped queue, atomic claim, arrival, collection start, package listing/scan and pickup
+completion. Claims update linked fulfillments transactionally; scans enforce package/task ownership,
+deduplicate offline `localEventId`s, record audit/domain events, and create exceptions for
+wrong/unexpected packages without exposing another task’s package details. Partial completion checks
+the missing list/reason and creates a follow-up task. Offer generation, runs/stops, hub receiving and
+picker UI remain outstanding. API build and OpenAPI export passed; picker runtime/integration behavior
+has not been exercised. No tests were run.
 
 ### 2.1 The authorization defect (fixed — do not reintroduce)
 
@@ -195,7 +196,7 @@ are stale for this checkout. Build in dependency order with `npm run build --wor
 contracts → config → crypto → database → api → web. The picker API/Nest build and OpenAPI export
 passed after first building those API dependencies. A root `package-lock.json` now locks the workspace
 dependency graph; use `npm ci`. System Node is v20.19, below the `>=22.15` package engine requirement
-and unable to verify the zstd runtime. Seven picker routes are in
+and unable to verify the zstd runtime. Eight picker routes are in
 `apps/api/openapi/bezzo-api.json`; no picker runtime/integration tests were run. Existing Android APK
 is a 154,774,238-byte **debug** artifact at
 `apps/mobile/build/app/outputs/flutter-apk/app-debug.apk`, SHA-256
@@ -270,9 +271,9 @@ exactly that.
 ## 6. Next work, in order
 
 1. **Phase 7 — picker system**: supplier fulfillment accept/pack/ready flows, picker heartbeat,
-   hub/capacity queue, atomic claim, arrival/start and replay-safe package scans are implemented.
-   Next: offer generation, pickup completion/partial reconciliation, runs/stops, hub handover and
-   receiving with duplicate/unexpected/discrepancy handling, then picker UI.
+   hub/capacity queue, atomic claim, arrival/start, replay-safe scans and full/partial pickup
+   completion are implemented. Next: offer generation, runs/stops, hub handover and receiving with
+   duplicate/unexpected/discrepancy handling, then picker UI.
 2. **Phase 8 — delivery**: provider adapter call sites only (no Porter logic scattered in the app).
 3. Extend the integration suite to the remaining critical scenarios: final-unit race, two pickers one
    task, duplicate package scan, duplicate hub receipt, queue delay, partial pickup, missing/unexpected

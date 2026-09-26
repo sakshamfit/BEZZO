@@ -1854,6 +1854,39 @@
           "picker"
         ]
       }
+    },
+    "/api/v1/picker/tasks/{taskId}/complete": {
+      "post": {
+        "operationId": "PickerController_completePickup",
+        "parameters": [
+          {
+            "name": "taskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key (8-255 characters) that makes this command replay-safe. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_CONFLICT.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Reconcile and complete a full or partial supplier pickup",
+        "tags": [
+          "picker"
+        ]
+      }
     }
   },
   "info": {

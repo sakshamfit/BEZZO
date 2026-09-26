@@ -14,10 +14,12 @@ import { UuidParamPipe, validate } from '../../common/pipes/zod-validation.pipe'
 import {
   pickerHeartbeatSchema,
   pickerLocationSchema,
+  completePickupSchema,
   scanPackageSchema,
   type PickerHeartbeatInput,
   type PickerLocationInput,
   type ScanPackageInput,
+  type CompletePickupInput,
 } from './picker.schemas';
 
 @ApiTags('picker')
@@ -106,5 +108,19 @@ export class PickerController {
     @Body(validate(scanPackageSchema)) body: ScanPackageInput,
   ) {
     return this.picker.scanPackage(actor, taskId, body);
+  }
+
+  @Post('tasks/:taskId/complete')
+  @Idempotent('picker.task_complete')
+  @HttpCode(200)
+  @RequirePermissions(Permission.PICKER_TASK_EXECUTE)
+  @Audited('picker.task_completed', 'pickup_task')
+  @ApiOperation({ summary: 'Reconcile and complete a full or partial supplier pickup' })
+  async completePickup(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('taskId', new UuidParamPipe('taskId')) taskId: string,
+    @Body(validate(completePickupSchema)) body: CompletePickupInput,
+  ) {
+    return this.picker.completePickup(actor, taskId, body);
   }
 }

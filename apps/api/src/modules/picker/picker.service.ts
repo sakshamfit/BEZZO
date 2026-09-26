@@ -15,7 +15,12 @@ import { AuditService } from '../../infrastructure/audit/audit.service';
 import { DomainError } from '../../common/errors/domain-error';
 import type { AuthenticatedActor } from '../../common/context/request-context';
 import { currentRequestId } from '../../common/context/request-context';
-import type { PickerHeartbeatInput, PickerLocationInput, ScanPackageInput } from './picker.schemas';
+import type {
+  CompletePickupInput,
+  PickerHeartbeatInput,
+  PickerLocationInput,
+  ScanPackageInput,
+} from './picker.schemas';
 
 interface PickupTaskRow {
   id: string;
@@ -388,6 +393,238 @@ export class PickerService {
     });
   }
 
+  async completePickup(actor: AuthenticatedActor, taskId: string, input: CompletePickupInput) {
+    const pickerId = this.requirePicker(actor);
+    return this.database.transaction(async (client) => {
+      const taskResult = await client.query<{
+        task_code: string;
+        status: string;
+        assigned_picker_id: string | null;
+        supplier_id: string;
+        hub_id: string | null;
+      }>(
+        `SELECT task_code, status, assigned_picker_id, supplier_id, hub_id
+           FROM pickup_tasks WHERE id = $1 FOR UPDATE`,
+        [taskId],
+      );
+      const task = taskResult.rows[0];
+      if (!task) throw DomainError.notFound(ErrorCode.TASK_NOT_FOUND, 'Pickup task was not found');
+      if (task.assigned_picker_id !== pickerId)
+        throw DomainError.forbidden(
+          ErrorCode.TASK_NOT_ASSIGNED_TO_PICKER,
+          'Pickup is not assigned to this picker',
+        );
+      if (task.status !== PickupTaskStatus.COLLECTING)
+        throw DomainError.conflict(
+          ErrorCode.TASK_STATE_INVALID,
+          'Only an active collection can be completed',
+        );
+
+      const reconciliation = await this.reconcilePackages(client, taskId);
+      if (reconciliation.expectedPackageCount === 0 || reconciliation.collectedPackageCount === 0)
+        throw DomainError.conflict(
+          ErrorCode.TASK_STATE_INVALID,
+          'Scan at least one expected package before completing pickup',
+        );
+
+      const missing = await client.query<{
+        id: string;
+        package_code: string;
+        fulfillment_id: string;
+      }>(
+        `SELECT p.id, p.package_code, p.fulfillment_id FROM pickup_packages p
+           JOIN pickup_task_orders pto ON pto.pickup_task_id = p.pickup_task_id
+             AND pto.fulfillment_id = p.fulfillment_id AND pto.status = 'ACTIVE'
+          WHERE p.pickup_task_id = $1 AND p.status = 'READY_FOR_PICKUP' AND p.collected_at IS NULL
+          ORDER BY p.package_code FOR UPDATE OF p`,
+        [taskId],
+      );
+      const actualMissingCodes = missing.rows.map((row) => row.package_code).sort();
+      if (input.missingPackageCodes) {
+        const requested = [...new Set(input.missingPackageCodes)].sort();
+        if (
+          requested.length !== actualMissingCodes.length ||
+          requested.some((code, index) => code !== actualMissingCodes[index])
+        )
+          throw DomainError.conflict(
+            ErrorCode.PACKAGE_NOT_EXPECTED,
+            'Missing package list does not match the unscanned packages',
+          );
+      }
+      const isPartial = actualMissingCodes.length > 0;
+      if (isPartial && !input.partialReason)
+        throw DomainError.unprocessable(
+          ErrorCode.PARTIAL_PICKUP_REASON_REQUIRED,
+          'Explain why the supplier could not provide every package',
+        );
+
+      const collectedFulfillments = await client.query<{ id: string }>(
+        `UPDATE fulfillments f SET status = 'COLLECTED', collected_at = now(), updated_at = now()
+           FROM pickup_task_orders pto
+          WHERE pto.pickup_task_id = $1 AND pto.status = 'ACTIVE' AND pto.fulfillment_id = f.id
+            AND pto.package_count_collected = pto.package_count AND f.status = 'PICKUP_ASSIGNED'
+          RETURNING f.id`,
+        [taskId],
+      );
+      for (const fulfillment of collectedFulfillments.rows) {
+        await client.query(
+          `UPDATE fulfillment_items SET status = 'COLLECTED', updated_at = now() WHERE fulfillment_id = $1 AND status = 'PACKED'`,
+          [fulfillment.id],
+        );
+        await client.query(
+          `INSERT INTO fulfillment_status_history (fulfillment_id, from_status, to_status, reason, actor_type, actor_id, request_id)
+           VALUES ($1, 'PICKUP_ASSIGNED', 'COLLECTED', $2, 'PICKER', $3, $4)`,
+          [
+            fulfillment.id,
+            `Pickup task ${task.task_code} collected`,
+            actor.userId,
+            currentRequestId() ?? null,
+          ],
+        );
+        await this.events.emit(client, {
+          eventName: DomainEventName.FulfillmentCollected,
+          aggregateType: 'fulfillment',
+          aggregateId: fulfillment.id,
+          payload: { fulfillmentId: fulfillment.id, pickupTaskId: taskId, pickerId },
+        });
+      }
+
+      await client.query(
+        `UPDATE pickup_packages SET status = 'PICKER_IN_TRANSIT', updated_at = now()
+          WHERE pickup_task_id = $1 AND collected_at IS NOT NULL AND status = 'PICKER_COLLECTED'`,
+        [taskId],
+      );
+      let followUpTask: { id: string; task_code: string } | null = null;
+      if (isPartial) {
+        await client.query(
+          `UPDATE pickup_task_orders SET status = CASE WHEN package_count_collected = package_count THEN 'COLLECTED' ELSE 'PARTIAL' END,
+             updated_at = now() WHERE pickup_task_id = $1 AND status = 'ACTIVE'`,
+          [taskId],
+        );
+        const newTask = await client.query<{ id: string; task_code: string }>(
+          `INSERT INTO pickup_tasks
+             (task_code, supplier_id, hub_id, status, priority, pickup_window_start, pickup_window_end,
+              order_count, package_count, partial_reason, supplier_explanation)
+           SELECT bezzo_next_pickup_task_code(), supplier_id, hub_id, 'CREATED', 'HIGH', now(), now() + interval '2 hours',
+                  (SELECT count(DISTINCT pto.order_id) FROM pickup_task_orders pto
+                    JOIN pickup_packages p ON p.pickup_task_id = pto.pickup_task_id AND p.fulfillment_id = pto.fulfillment_id
+                   WHERE pto.pickup_task_id = $1 AND pto.status = 'PARTIAL' AND p.status = 'READY_FOR_PICKUP'),
+                  (SELECT count(*) FROM pickup_packages WHERE pickup_task_id = $1 AND status = 'READY_FOR_PICKUP'),
+                  $2, $3
+             FROM pickup_tasks WHERE id = $1
+           RETURNING id, task_code`,
+          [taskId, input.partialReason ?? null, input.supplierExplanation ?? null],
+        );
+        followUpTask = newTask.rows[0]!;
+        await client.query(
+          `INSERT INTO pickup_task_orders (pickup_task_id, order_id, fulfillment_id, package_count, status)
+           SELECT $2, pto.order_id, pto.fulfillment_id, count(p.id), 'ACTIVE'
+             FROM pickup_task_orders pto JOIN pickup_packages p
+               ON p.pickup_task_id = pto.pickup_task_id AND p.fulfillment_id = pto.fulfillment_id
+            WHERE pto.pickup_task_id = $1 AND pto.status = 'PARTIAL' AND p.status = 'READY_FOR_PICKUP'
+            GROUP BY pto.order_id, pto.fulfillment_id`,
+          [taskId, followUpTask.id],
+        );
+        await client.query(
+          `UPDATE pickup_packages SET pickup_task_id = $2, expected_hub_id = coalesce(expected_hub_id, $3), updated_at = now()
+            WHERE pickup_task_id = $1 AND status = 'READY_FOR_PICKUP'`,
+          [taskId, followUpTask.id, task.hub_id],
+        );
+        await client.query(
+          `INSERT INTO pickup_exceptions (pickup_task_id, package_id, type, reason, reported_by, reported_by_type)
+           SELECT $1, id, 'PACKAGE_MISSING', $2, $3, 'PICKER' FROM pickup_packages WHERE pickup_task_id = $4`,
+          [taskId, input.partialReason, actor.userId, followUpTask.id],
+        );
+        await this.events.emit(client, {
+          eventName: DomainEventName.PickupTaskCreated,
+          aggregateType: 'pickup_task',
+          aggregateId: followUpTask.id,
+          payload: {
+            taskId: followUpTask.id,
+            taskCode: followUpTask.task_code,
+            supplierId: task.supplier_id,
+            hubId: task.hub_id,
+            packageCount: actualMissingCodes.length,
+            followUpForTaskId: taskId,
+          },
+        });
+      } else {
+        await client.query(
+          `UPDATE pickup_task_orders SET status = 'COLLECTED', updated_at = now() WHERE pickup_task_id = $1 AND status = 'ACTIVE'`,
+          [taskId],
+        );
+      }
+
+      const status = isPartial ? PickupTaskStatus.PARTIALLY_PICKED : PickupTaskStatus.PICKED_UP;
+      const transitioned = await client.query(
+        `UPDATE pickup_tasks SET status = $2, collected_at = now(), partial_reason = $3,
+             supplier_explanation = $4, updated_at = now()
+          WHERE id = $1 AND status = 'COLLECTING'`,
+        [
+          taskId,
+          status,
+          isPartial ? (input.partialReason ?? null) : null,
+          input.supplierExplanation ?? null,
+        ],
+      );
+      if ((transitioned.rowCount ?? 0) !== 1)
+        throw DomainError.conflict(
+          ErrorCode.TASK_STATE_INVALID,
+          'Pickup status changed; refresh and try again',
+        );
+      await client.query(
+        `INSERT INTO pickup_events (pickup_task_id, picker_id, event_type, actor_type, actor_id, request_id, metadata)
+         VALUES ($1, $2, $3, 'PICKER', $4, $5, $6::JSONB)`,
+        [
+          taskId,
+          pickerId,
+          isPartial ? 'PICKUP_PARTIALLY_COMPLETED' : 'PICKUP_COMPLETED',
+          actor.userId,
+          currentRequestId() ?? null,
+          JSON.stringify({
+            expectedPackageCount: reconciliation.expectedPackageCount,
+            collectedPackageCount: reconciliation.collectedPackageCount,
+            missingPackageCodes: actualMissingCodes,
+            supplierExplanation: input.supplierExplanation ?? null,
+          }),
+        ],
+      );
+      await this.events.emit(client, {
+        eventName: isPartial
+          ? DomainEventName.PickupPartiallyCompleted
+          : DomainEventName.PickupCompleted,
+        aggregateType: 'pickup_task',
+        aggregateId: taskId,
+        payload: {
+          taskId,
+          status,
+          pickerId,
+          followUpTaskId: followUpTask?.id ?? null,
+          reconciliation,
+        },
+      });
+      await this.audit.record(client, {
+        action: isPartial ? 'picker.task_partially_completed' : 'picker.task_completed',
+        resourceType: 'pickup_task',
+        resourceId: taskId,
+        actorUserId: actor.userId,
+        metadata: {
+          pickerId,
+          followUpTaskId: followUpTask?.id ?? null,
+          reconciliation,
+          partialReason: input.partialReason ?? null,
+        },
+      });
+      return {
+        success: true,
+        status,
+        reconciliation,
+        followUpTaskId: followUpTask?.id ?? null,
+        followUpTaskCode: followUpTask?.task_code ?? null,
+      };
+    });
+  }
+
   async listTasks(actor: AuthenticatedActor) {
     const pickerId = this.requirePicker(actor);
     const rows = await this.database.rows<PickupTaskRow>(
@@ -499,22 +736,33 @@ export class PickerService {
       );
       const task = taskResult.rows[0]!;
 
-      const linked = await client.query<{ total: number }>(
-        `SELECT count(*)::INTEGER AS total FROM pickup_task_orders WHERE pickup_task_id = $1 AND status = 'ACTIVE'`,
+      const linkedFulfillments = await client.query<{ id: string; status: string }>(
+        `SELECT f.id, f.status FROM pickup_task_orders pto JOIN fulfillments f ON f.id = pto.fulfillment_id
+          WHERE pto.pickup_task_id = $1 AND pto.status = 'ACTIVE' FOR UPDATE OF f`,
         [taskId],
       );
-      const expectedFulfillments = linked.rows[0]?.total ?? 0;
+      const expectedFulfillments = linkedFulfillments.rows.length;
       if (expectedFulfillments === 0) {
         throw DomainError.conflict(
           ErrorCode.INVALID_STATE_TRANSITION,
           'Pickup task has no active fulfillments',
         );
       }
+      if (
+        linkedFulfillments.rows.some(
+          (fulfillment) => !['READY_FOR_PICKUP', 'PICKUP_ASSIGNED'].includes(fulfillment.status),
+        )
+      ) {
+        throw DomainError.conflict(
+          ErrorCode.INVALID_STATE_TRANSITION,
+          'One or more fulfillments are no longer ready for pickup',
+        );
+      }
       const assignedFulfillments = await client.query<{ id: string }>(
         `UPDATE fulfillments f SET status = 'PICKUP_ASSIGNED', updated_at = now()
            FROM pickup_task_orders pto
           WHERE pto.pickup_task_id = $1 AND pto.status = 'ACTIVE' AND pto.fulfillment_id = f.id
-            AND f.status = 'READY_FOR_PICKUP'
+            AND f.status IN ('READY_FOR_PICKUP','PICKUP_ASSIGNED')
           RETURNING f.id`,
         [taskId],
       );
@@ -524,17 +772,19 @@ export class PickerService {
           'One or more fulfillments are no longer ready for pickup',
         );
       }
-      await client.query(
-        `INSERT INTO fulfillment_status_history (fulfillment_id, from_status, to_status, reason, actor_type, actor_id, request_id)
-         SELECT pto.fulfillment_id, 'READY_FOR_PICKUP', 'PICKUP_ASSIGNED', $2, 'PICKER', $3, $4
-           FROM pickup_task_orders pto WHERE pto.pickup_task_id = $1 AND pto.status = 'ACTIVE'`,
-        [
-          taskId,
-          `Pickup task ${task.task_code} accepted`,
-          actor.userId,
-          currentRequestId() ?? null,
-        ],
-      );
+      for (const fulfillment of linkedFulfillments.rows) {
+        if (fulfillment.status !== 'READY_FOR_PICKUP') continue;
+        await client.query(
+          `INSERT INTO fulfillment_status_history (fulfillment_id, from_status, to_status, reason, actor_type, actor_id, request_id)
+           VALUES ($1, 'READY_FOR_PICKUP', 'PICKUP_ASSIGNED', $2, 'PICKER', $3, $4)`,
+          [
+            fulfillment.id,
+            `Pickup task ${task.task_code} accepted`,
+            actor.userId,
+            currentRequestId() ?? null,
+          ],
+        );
+      }
 
       await client.query(`UPDATE pickers SET status = 'BUSY', updated_at = now() WHERE id = $1`, [
         pickerId,

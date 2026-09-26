@@ -40,6 +40,16 @@ export const scanPackageSchema = z
   })
   .strict();
 
+export const completePickupSchema = z
+  .object({
+    partialReason: z.string().trim().min(1).max(500).optional(),
+    missingPackageCodes: z.array(z.string().trim().min(1).max(160)).max(500).optional(),
+    supplierExplanation: z.string().trim().min(1).max(1000).optional(),
+    notes: z.string().trim().max(1000).optional(),
+  })
+  .strict();
+
 export type PickerHeartbeatInput = z.infer<typeof pickerHeartbeatSchema>;
 export type PickerLocationInput = z.infer<typeof pickerLocationSchema>;
 export type ScanPackageInput = z.infer<typeof scanPackageSchema>;
+export type CompletePickupInput = z.infer<typeof completePickupSchema>;
