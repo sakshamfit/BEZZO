@@ -41,6 +41,18 @@ No `.env`/hosted database URL is configured in this workspace yet, so no product
 seed, or connectivity verification has been run. When credentials are configured, run migrations,
 then `db:verify`; do not run development seeds against the production database.
 
+### Supabase connection setup (2026-09-27)
+
+The Supabase session pooler endpoint is reachable over TCP. PostgreSQL TLS negotiation exposed the
+Supabase CA as untrusted by the workstation, so the pooler handshake fails with certificate
+verification enabled. `DatabaseOptions.sslCaCertPath` and `DATABASE_SSL_CA_CERT_PATH` now allow the
+API and CLI to trust a project CA certificate file without disabling verification. Save the root CA
+downloaded from Supabase Database Settings → SSL Configuration as
+`.secrets/supabase-root.crt` (the `.secrets/` directory is gitignored), set that path in `.env`, then
+retry status/migrations. API/database/config builds were attempted; config and database builds pass,
+API typecheck started without reported diagnostics, while API build hit a transient Windows EPERM
+removing an output directory under OneDrive. No database query, migration, or seed succeeded yet.
+
 ## 2. Verified running system
 
 | Service | Command | Address | Evidence |

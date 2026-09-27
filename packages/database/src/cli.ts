@@ -61,6 +61,7 @@ function createDb(): Database {
     statementTimeoutMs: Number(process.env.DATABASE_STATEMENT_TIMEOUT_MS ?? 60_000),
     ssl: process.env.DATABASE_SSL === 'true',
     sslRejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false',
+    sslCaCertPath: process.env.DATABASE_SSL_CA_CERT_PATH,
     applicationName: 'bezzo-db-cli',
     logger: {
       debug: () => undefined,

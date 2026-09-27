@@ -24,6 +24,7 @@ export const databaseProvider = {
       statementTimeoutMs: config.DATABASE_STATEMENT_TIMEOUT_MS,
       ssl: config.DATABASE_SSL,
       sslRejectUnauthorized: config.DATABASE_SSL_REJECT_UNAUTHORIZED,
+      sslCaCertPath: config.DATABASE_SSL_CA_CERT_PATH,
       applicationName: `${config.DATABASE_APPLICATION_NAME}-api`,
       logger: {
         debug: (message, meta) => logger.debugWith(meta ?? {}, message),

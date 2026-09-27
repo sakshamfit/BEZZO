@@ -8,6 +8,7 @@
  *    scattered across the codebase.
  */
 import { Pool, type PoolClient, type PoolConfig, type QueryResult, type QueryResultRow } from 'pg';
+import { readFileSync } from 'node:fs';
 
 export interface DatabaseLogger {
   debug(message: string, meta?: Record<string, unknown>): void;
@@ -25,6 +26,8 @@ export interface DatabaseOptions {
   ssl?: boolean;
   /** Disable certificate validation only for providers that require their private CA setup. */
   sslRejectUnauthorized?: boolean;
+  /** PEM file containing a provider CA certificate; extends the platform's trusted CAs. */
+  sslCaCertPath?: string;
   applicationName?: string;
   logger?: DatabaseLogger;
 }
@@ -54,7 +57,12 @@ export class Database {
       query_timeout: (options.statementTimeoutMs ?? 15_000) + 5_000,
       allowExitOnIdle: false,
       ...(options.ssl
-        ? { ssl: { rejectUnauthorized: options.sslRejectUnauthorized ?? true } }
+        ? {
+            ssl: {
+              rejectUnauthorized: options.sslRejectUnauthorized ?? true,
+              ...(options.sslCaCertPath ? { ca: readFileSync(options.sslCaCertPath, 'utf8') } : {}),
+            },
+          }
         : {}),
     };
     this.pool = new Pool(poolConfig);

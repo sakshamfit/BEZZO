@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-27** (PostgreSQL TLS hardening; see §2).
+Last updated: **2026-09-27** (Supabase connection setup; see §2).
 
 ---
 
@@ -43,12 +43,16 @@ working source of truth for the visual language.
 **Database TLS hardening (2026-09-27):** API and database CLI `pg` pools now verify the server
 certificate by default when `DATABASE_SSL=true`. `DATABASE_SSL_REJECT_UNAUTHORIZED` defaults to true,
 and production configuration rejects false. Config, database, and API TypeScript builds completed.
-The user selected their hosted PostgreSQL URL as the production target but has not yet configured it;
-root `.env` is absent and gitignored. Do not run production migrations, seed, or verification until
-the secret is installed. After it is available, inspect only sanitized host/database metadata, verify
-connectivity, run `db:migrate`, then `db:verify`; reference seed is only if the product explicitly
-needs it. Never run development seeds or reset against production. No production DB is currently
-connected.
+The user configured their Supabase session pooler fields and supplied the database password. Root
+`.env` has been created (gitignored) with the percent-encoded connection string and SSL enabled; never
+print or commit it. TCP to the Supabase pooler succeeded, but PostgreSQL TLS verification fails with
+`SELF_SIGNED_CERT_IN_CHAIN`. Supabase's documented solution is to download the CA from Database
+Settings → SSL Configuration. Pool options now support `sslCaCertPath`; API and DB CLI read
+`DATABASE_SSL_CA_CERT_PATH`. User must save their CA file to `.secrets/supabase-root.crt`, then set
+`DATABASE_SSL_CA_CERT_PATH=.secrets/supabase-root.crt` in root `.env`. `.secrets/` is gitignored.
+No DB query or migration succeeded. Never turn off cert verification; do not run dev seeds or reset
+against this production DB. Config/database builds passed; API build hit OneDrive `EPERM` cleaning a
+dist directory; API typecheck returned without diagnostics but process completion wasn't confirmed.
 
 **Branch** `main`. **PR #1** (web app + payments) is merged into `main`.
 History: `781d1a9` (specs uploaded) → `dd0835c` → `6f9a628` → `d38b108` (foundation → identity →

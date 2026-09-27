@@ -56,6 +56,7 @@ const envSchema = z
     DATABASE_STATEMENT_TIMEOUT_MS: integerish(15_000),
     DATABASE_SSL: booleanish.default(false),
     DATABASE_SSL_REJECT_UNAUTHORIZED: booleanish.default(true),
+    DATABASE_SSL_CA_CERT_PATH: z.string().optional(),
     DATABASE_APPLICATION_NAME: z.string().default('bezzo'),
 
     // ---- Redis (cache/geo only; PostgreSQL stays authoritative)
