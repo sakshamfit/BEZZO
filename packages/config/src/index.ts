@@ -55,6 +55,7 @@ const envSchema = z
     DATABASE_POOL_IDLE_TIMEOUT_MS: integerish(30_000),
     DATABASE_STATEMENT_TIMEOUT_MS: integerish(15_000),
     DATABASE_SSL: booleanish.default(false),
+    DATABASE_SSL_REJECT_UNAUTHORIZED: booleanish.default(true),
     DATABASE_APPLICATION_NAME: z.string().default('bezzo'),
 
     // ---- Redis (cache/geo only; PostgreSQL stays authoritative)
@@ -213,6 +214,13 @@ const envSchema = z
           code: z.ZodIssueCode.custom,
           path: ['DATABASE_SSL'],
           message: 'Database TLS must be enabled in production',
+        });
+      }
+      if (env.DATABASE_SSL_REJECT_UNAUTHORIZED === false) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['DATABASE_SSL_REJECT_UNAUTHORIZED'],
+          message: 'Database TLS certificate verification must remain enabled in production',
         });
       }
     }

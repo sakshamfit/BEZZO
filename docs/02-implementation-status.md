@@ -32,6 +32,15 @@ BEZZO/
 
 Toolchain: npm 10.8.2 (`packageManager` pinned at repository root) · turbo 2.x · TypeScript 5.9.3 (`strict`, `noUncheckedIndexedAccess`).
 
+### Database TLS hardening (2026-09-27)
+
+PostgreSQL pools now verify server certificates whenever TLS is enabled. The new
+`DATABASE_SSL_REJECT_UNAUTHORIZED` setting defaults to `true`; production config rejects `false`.
+The API and database CLI share this behavior. Config, database, and API TypeScript builds completed.
+No `.env`/hosted database URL is configured in this workspace yet, so no production migration,
+seed, or connectivity verification has been run. When credentials are configured, run migrations,
+then `db:verify`; do not run development seeds against the production database.
+
 ## 2. Verified running system
 
 | Service | Command | Address | Evidence |

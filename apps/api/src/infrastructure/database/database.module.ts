@@ -23,6 +23,7 @@ export const databaseProvider = {
       idleTimeoutMs: config.DATABASE_POOL_IDLE_TIMEOUT_MS,
       statementTimeoutMs: config.DATABASE_STATEMENT_TIMEOUT_MS,
       ssl: config.DATABASE_SSL,
+      sslRejectUnauthorized: config.DATABASE_SSL_REJECT_UNAUTHORIZED,
       applicationName: `${config.DATABASE_APPLICATION_NAME}-api`,
       logger: {
         debug: (message, meta) => logger.debugWith(meta ?? {}, message),

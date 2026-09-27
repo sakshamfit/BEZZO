@@ -23,6 +23,8 @@ export interface DatabaseOptions {
   statementTimeoutMs?: number;
   connectionTimeoutMs?: number;
   ssl?: boolean;
+  /** Disable certificate validation only for providers that require their private CA setup. */
+  sslRejectUnauthorized?: boolean;
   applicationName?: string;
   logger?: DatabaseLogger;
 }
@@ -51,7 +53,9 @@ export class Database {
       statement_timeout: options.statementTimeoutMs ?? 15_000,
       query_timeout: (options.statementTimeoutMs ?? 15_000) + 5_000,
       allowExitOnIdle: false,
-      ...(options.ssl ? { ssl: { rejectUnauthorized: false } } : {}),
+      ...(options.ssl
+        ? { ssl: { rejectUnauthorized: options.sslRejectUnauthorized ?? true } }
+        : {}),
     };
     this.pool = new Pool(poolConfig);
     this.logger = options.logger;

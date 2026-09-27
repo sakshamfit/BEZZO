@@ -60,6 +60,7 @@ function createDb(): Database {
     maxConnections: Number(process.env.DATABASE_POOL_MAX ?? 10),
     statementTimeoutMs: Number(process.env.DATABASE_STATEMENT_TIMEOUT_MS ?? 60_000),
     ssl: process.env.DATABASE_SSL === 'true',
+    sslRejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false',
     applicationName: 'bezzo-db-cli',
     logger: {
       debug: () => undefined,
