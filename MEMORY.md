@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-27** (Supabase connection setup; see §2).
+Last updated: **2026-09-28** (production readiness review; see §2).
 
 ---
 
@@ -51,8 +51,31 @@ Settings → SSL Configuration. Pool options now support `sslCaCertPath`; API an
 `DATABASE_SSL_CA_CERT_PATH`. User must save their CA file to `.secrets/supabase-root.crt`, then set
 `DATABASE_SSL_CA_CERT_PATH=.secrets/supabase-root.crt` in root `.env`. `.secrets/` is gitignored.
 No DB query or migration succeeded. Never turn off cert verification; do not run dev seeds or reset
-against this production DB. Config/database builds passed; API build hit OneDrive `EPERM` cleaning a
-dist directory; API typecheck returned without diagnostics but process completion wasn't confirmed.
+against this production DB. The first API build attempt hit OneDrive `EPERM` cleaning a dist directory;
+later API/database/config builds and API typecheck passed. Database connection is blocked on the
+Supabase CA certificate.
+
+**Production review (2026-09-28):** `.github/workflows/ci.yml` now defines Node 22.x CI with Node 24
+compatible Actions releases for npm audit,
+workspace builds/unit checks, PostgreSQL 17 migrations + verifier + seeded API integration suite, and
+Flutter analyze/test/debug APK. Next upgraded to 16.3.6 and React to 19.3.0; full npm audit was clean.
+Signup requires terms version and a single-use ops picker invite; picker invite consumption is an
+atomic update inside the account transaction, and its home hub is honored. Caller-supplied employee
+codes no longer assign identity. Signup no longer issues a duplicate OTP; pending accounts cannot
+password-sign in before contact verification. Login `next` redirects are constrained to same-origin
+paths. CORS uses exact configured origins and production config requires HTTPS origins; web security
+response headers are set, with HSTS only in production. Final verification on 2026-09-28 passed:
+config/database/API builds, API typecheck, web Next production build, config (10) and API (3) unit
+tests, Flutter analyze + 2 catalog tests, full `npm audit` (0 advisories), and npm ci dry-run. The
+GitHub CI has not been remotely run.
+
+Known production blockers, do not claim launch-ready: Supabase database CA file absent
+(`.secrets/supabase-root.crt`); no successful hosted DB query/migration; signup OTP email/SMS providers
+are not implemented/configured; web stores session tokens in localStorage (HttpOnly web session
+hardening remains); global/IP rate limit config is unused; no GitHub branch rules or deployment
+credentials/environment; release signing/API domain absent. Many domain features remain open as listed
+in `docs/02-implementation-status.md` (delivery, picker UI/runs, settlements, promotions, broader
+ops/analytics, load/DR). Repo CI is added but has not been run by GitHub yet.
 
 **Branch** `main`. **PR #1** (web app + payments) is merged into `main`.
 History: `781d1a9` (specs uploaded) → `dd0835c` → `6f9a628` → `d38b108` (foundation → identity →

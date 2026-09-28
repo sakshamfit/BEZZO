@@ -117,7 +117,7 @@ async function bootstrap(): Promise<void> {
     strictTransportSecurity: config.NODE_ENV === 'production',
   });
   await app.register(require('@fastify/cors'), {
-    origin: true,
+    origin: config.CORS_ALLOWED_ORIGINS,
     credentials: true,
     exposedHeaders: ['X-Request-ID', 'X-Correlation-ID', 'Retry-After'],
   });

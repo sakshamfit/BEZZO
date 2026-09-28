@@ -80,7 +80,6 @@ export class AuthService {
     userId: string;
     status: UserStatus;
     verificationRequired: boolean;
-    devOtp: string | null;
   }> {
     const strength = validatePasswordStrength(input.password, this.config.AUTH_PASSWORD_MIN_LENGTH);
     if (!strength.valid) {
@@ -127,6 +126,24 @@ export class AuthService {
       );
       const userId = userResult.rows[0]?.id;
       if (!userId) throw new Error('Failed to create user');
+
+      let pickerHomeHubId: string | null = null;
+      if (input.accountType === 'PICKER') {
+        // Consume the operations-issued invite atomically so concurrent registrations cannot reuse it.
+        const invite = await client.query<{ home_hub_id: string | null }>(
+          `UPDATE picker_invites
+              SET used_at = now(), used_by = $2
+            WHERE code = $1 AND role = 'PICKER' AND used_at IS NULL AND expires_at > now()
+            RETURNING home_hub_id`,
+          [input.inviteCode, userId],
+        );
+        if (!invite.rows[0]) {
+          throw new DomainError(ErrorCode.VALIDATION_FAILED, 'This picker invite code is invalid or has expired', {
+            httpStatus: 422,
+          });
+        }
+        pickerHomeHubId = invite.rows[0].home_hub_id;
+      }
 
       let organizationId: string | null = null;
       if (input.accountType !== 'PICKER') {
@@ -175,27 +192,14 @@ export class AuthService {
       }
 
       if (input.accountType === 'PICKER') {
-        const hub = await client.query<{ id: string }>(`SELECT id FROM collection_hubs ORDER BY code LIMIT 1`);
-        const hubId = hub.rows[0]?.id ?? null;
-        if (input.inviteCode) {
-          const invite = await client.query<{ id: string; role: string }>(
-            `SELECT id, role FROM picker_invites WHERE code = $1 AND used_at IS NULL AND expires_at > now()`,
-            [input.inviteCode],
-          );
-          if (!invite.rows[0]) {
-            throw new DomainError(ErrorCode.VALIDATION_FAILED, 'This picker invite code is invalid or has expired', {
-              httpStatus: 422,
-            });
-          }
-          await client.query(`UPDATE picker_invites SET used_at = now(), used_by = $2 WHERE id = $1`, [
-            invite.rows[0].id,
-            userId,
-          ]);
-        }
+        const fallbackHub = pickerHomeHubId
+          ? null
+          : await client.query<{ id: string }>(`SELECT id FROM collection_hubs ORDER BY code LIMIT 1`);
+        const hubId = pickerHomeHubId ?? fallbackHub?.rows[0]?.id ?? null;
         await client.query(
           `INSERT INTO pickers (user_id, employee_code, status, phone, home_hub_id)
            VALUES ($1, $2, 'OFFLINE', $3, $4)`,
-          [userId, input.employeeCode ?? `PEND-${userId.slice(0, 8)}`, phone, hubId],
+          [userId, `PEND-${userId.slice(0, 8)}`, phone, hubId],
         );
       }
 
@@ -221,18 +225,7 @@ export class AuthService {
       return { userId, organizationId };
     });
 
-    const identifier = email ?? phone;
-    let devOtp: string | null = null;
-    if (identifier) {
-      const challenge = await this.createOtpChallenge({
-        userId: created.userId,
-        identifier,
-        purpose: email ? 'EMAIL_VERIFY' : 'PHONE_VERIFY',
-      });
-      devOtp = challenge.devOtp;
-    }
-
-    return { userId: created.userId, status: UserStatus.PENDING, verificationRequired: true, devOtp };
+    return { userId: created.userId, status: UserStatus.PENDING, verificationRequired: true };
   }
 
   /* ----------------------------------------------------------------------- OTP */
@@ -477,6 +470,17 @@ export class AuthService {
         reason: 'BAD_PASSWORD',
       });
       throw new DomainError(ErrorCode.INVALID_CREDENTIALS, 'The credentials provided are incorrect');
+    }
+
+    if (user.status === 'PENDING') {
+      await this.recordAuthEvent({
+        userId: user.id,
+        identifier,
+        eventType: 'password.login',
+        success: false,
+        reason: 'CONTACT_NOT_VERIFIED',
+      });
+      throw new DomainError(ErrorCode.ACCOUNT_DISABLED, 'Verify your registered email or phone before signing in');
     }
 
     await this.database.query(

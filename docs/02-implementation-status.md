@@ -1,6 +1,6 @@
 # BEZZO — implementation status (living memory)
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-28
 **Branch:** `main`
 **Purpose:** this file is the project's memory. It records *what actually exists in code*, how it was
 verified, what is deliberately absent, and what comes next. It is updated at the end of every work
@@ -19,7 +19,7 @@ Status vocabulary (as required by the brief):
 BEZZO/
 ├── apps/
 │   ├── api/        NestJS 11 + Fastify — versioned REST API, workers, OpenAPI
-│   ├── web/        Next.js 15 + React 19 — buyer storefront, supplier workspace, ops screens
+│   ├── web/        Next.js 16 + React 19 — buyer storefront, supplier workspace, ops screens
 │   └── mobile/     Flutter/Dart — buyer prototype; core, catalog, cart, and presentation modules
 ├── packages/
 │   ├── contracts/  framework-free domain vocabulary (enums, events, errors, DTOs, state machines)
@@ -32,14 +32,39 @@ BEZZO/
 
 Toolchain: npm 10.8.2 (`packageManager` pinned at repository root) · turbo 2.x · TypeScript 5.9.3 (`strict`, `noUncheckedIndexedAccess`).
 
+### Production readiness review (2026-09-28)
+
+- **IMPLEMENTED in this review:** Next.js 16.3.6 / React 19.3.0 patch line; `npm audit` reports zero
+  vulnerabilities. Production CORS now requires explicit exact HTTPS origins. Web responses add
+  nosniff, same-origin framing, strict referrer, permissions policy, and production HSTS headers.
+- **IMPLEMENTED in this review:** API signup requires a recorded terms version. Picker signup requires
+  an operations-issued, unexpired, unused `PICKER` invite, consumed atomically in the same transaction;
+  the client can no longer self-assign its picker employee code. Password sign-in is denied until
+  contact verification. Registration now leaves OTP issuance to the explicit follow-up endpoint, so
+  clients no longer trigger duplicate verification messages. Login `next` redirects are origin-checked.
+- **IMPLEMENTED, local evidence:** API/config/database builds and web production build completed;
+  API and config unit tests passed (3 and 10 checks); Flutter analyze and 2 catalog model tests passed.
+- **IMPLEMENTED, not yet remotely exercised:** `.github/workflows/ci.yml` runs npm audit, workspace
+  builds, unit tests, ephemeral PostgreSQL migrations/verification, seeded API integration tests, and
+  Flutter analysis/tests/debug APK build. GitHub branch protection and deployment credentials are
+  outside this repository and are not configured.
+- **BLOCKED:** Supabase pool TCP is reachable, but the database certificate file is still missing;
+  TLS verification fails, so no hosted schema query/migration has passed.
+- **NOT PRODUCTION READY:** production OTP email/SMS transports are not implemented/configured, the
+  web session token is held in localStorage instead of an HttpOnly cookie, and global/IP rate limiting
+  is absent (`RATE_LIMIT_*` config is not wired). Production requires live payment/storage/search/cache
+  credentials and an API/web/mobile deployment environment. Picker UI/runs, delivery, settlements,
+  promotions, remaining operations dashboards, disaster recovery and load testing are still open.
+
 ### Database TLS hardening (2026-09-27)
 
 PostgreSQL pools now verify server certificates whenever TLS is enabled. The new
 `DATABASE_SSL_REJECT_UNAUTHORIZED` setting defaults to `true`; production config rejects `false`.
-The API and database CLI share this behavior. Config, database, and API TypeScript builds completed.
-No `.env`/hosted database URL is configured in this workspace yet, so no production migration,
-seed, or connectivity verification has been run. When credentials are configured, run migrations,
-then `db:verify`; do not run development seeds against the production database.
+The API and database CLI share this behavior. A hosted Supabase URL is in the gitignored root `.env`,
+but no database query or migration has succeeded because the database CA certificate is not installed.
+After saving it to `.secrets/supabase-root.crt` and setting `DATABASE_SSL_CA_CERT_PATH` in `.env`,
+verify connection and migration status, apply migrations, then `db:verify`. Do not run development
+seeds against production.
 
 ### Supabase connection setup (2026-09-27)
 
@@ -49,9 +74,8 @@ verification enabled. `DatabaseOptions.sslCaCertPath` and `DATABASE_SSL_CA_CERT_
 API and CLI to trust a project CA certificate file without disabling verification. Save the root CA
 downloaded from Supabase Database Settings → SSL Configuration as
 `.secrets/supabase-root.crt` (the `.secrets/` directory is gitignored), set that path in `.env`, then
-retry status/migrations. API/database/config builds were attempted; config and database builds pass,
-API typecheck started without reported diagnostics, while API build hit a transient Windows EPERM
-removing an output directory under OneDrive. No database query, migration, or seed succeeded yet.
+retry status/migrations. Config/database/API builds now pass. No database query, migration, or seed
+succeeded yet.
 
 ## 2. Verified running system
 
@@ -59,7 +83,7 @@ removing an output directory under OneDrive. No database query, migration, or se
 | --- | --- | --- | --- |
 | API | `node dist/main.js` (from `apps/api`) | `0.0.0.0:4000` | 71 operations over 55 paths in the live Swagger document (same numbers in the checked-in `openapi/bezzo-api.json`; 12 of them document the required `Idempotency-Key`); `/health` 200; `/docs` 200; `/api/v1/catalog/products` 200 |
 | Web | `npm run dev --workspace=@bezzo/web` | `0.0.0.0:3000` | `/`, `/apply`, `/login`, `/register`, `/catalog`, `/catalog/:id`, `/cart`, `/checkout`, `/orders`, `/orders/:id`, `/account`, `/notifications`, `/status`, `/supplier`, `/supplier/listings`, `/supplier/inventory`, `/admin/applications` all return 200 |
-| Database | embedded PostgreSQL 17.10 | `127.0.0.1:5432` | `bezzo_local` reset + 14/14 migrations + seed (409 statements) + `verify` PASS |
+| Database | embedded PostgreSQL 17.10 (last verified in earlier sandbox, 2026-09-26) | `127.0.0.1:5432` | Historical evidence: `bezzo_local` reset + then-current 14/14 migrations + seed (409 statements) + `verify` PASS. Current repository has 17 migrations; hosted Supabase is not yet verified. |
 | Redis | **not running** (no local binary) | — | documented degraded mode: in-process cache fallback, reported by `/health` |
 | OpenSearch | `SEARCH_ENABLED=false` | — | documented degraded mode: database search path, reported by `/health` |
 
@@ -75,7 +99,7 @@ fulfilled — closes the unpaid order with it (see §5.2).
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | Foundation: workspace, tooling, config, logging, migrations, health/metrics | **IMPLEMENTED** |
-| 2 | Identity & onboarding: auth, sessions, RBAC, buyer/supplier profiles, verification, documents | **IMPLEMENTED** (mobile OTP flows exist API-side; push delivery **REQUIRES EXTERNAL CREDENTIALS**) |
+| 2 | Identity & onboarding: auth, sessions, RBAC, buyer/supplier profiles, verification, documents | **PARTIALLY IMPLEMENTED** (signup/sign-in and API-side OTP challenges work; password recovery and production OTP email/SMS transport are **NOT IMPLEMENTED**; push delivery **REQUIRES EXTERNAL CREDENTIALS**) |
 | 3 | Catalogue & inventory: products, categories, manufacturers, listings, inventory + ledger | **IMPLEMENTED** |
 | 4 | Marketplace: cart, checkout, orders, payments | Cart + quote + order placement + cancellation + reservation commitment/expiry **IMPLEMENTED** (web `/cart`, `/checkout`, `/orders`, `/orders/[orderId]`); payment capture, webhooks, retry and refunds **IMPLEMENTED** (Phase 6 below) |
 | 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | Supplier fulfillment list/detail, accept/reject, pack and ready-for-pickup are **IMPLEMENTED** (API, web workspace, integration coverage); picker pickup remains Phase 7 |

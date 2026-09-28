@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-and-api:
+    name: Web, API, packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - name: Build workspace packages
+        run: |
+          npm run build --workspace=@bezzo/contracts
+          npm run build --workspace=@bezzo/config
+          npm run build --workspace=@bezzo/crypto
+          npm run build --workspace=@bezzo/database
+          npm run build --workspace=@bezzo/api
+          npm run build --workspace=@bezzo/web
+      - name: Unit and schema validation
+        run: |
+          npm run test:unit --workspace=@bezzo/config
+          npm run test:unit --workspace=@bezzo/crypto
+          npm run test:unit --workspace=@bezzo/api
+      - name: Type check web
+        run: npm run typecheck --workspace=@bezzo/web
+
+  database-migrations:
+    name: PostgreSQL migrations and invariants
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bezzo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bezzo_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/bezzo_ci
+      DATABASE_SSL: 'false'
+      DATABASE_SSL_REJECT_UNAUTHORIZED: 'true'
+      JWT_ACCESS_SECRET: ci-access-secret-not-for-production-123
+      JWT_REFRESH_SECRET: ci-refresh-secret-not-for-production-456
+      AUTH_OTP_PEPPER: ci-otp-pepper-not-for-production
+      PAYMENTS_PROVIDER: mock
+      LOGISTICS_PROVIDER: manual
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - name: Build database CLI
+        run: |
+          npm run build --workspace=@bezzo/contracts
+          npm run build --workspace=@bezzo/config
+          npm run build --workspace=@bezzo/crypto
+          npm run build --workspace=@bezzo/database
+          npm run build --workspace=@bezzo/api
+      - run: npm run migrate --workspace=@bezzo/database
+      - run: npm run verify --workspace=@bezzo/database
+      - name: Seed isolated integration fixtures
+        run: npm run seed --workspace=@bezzo/database -- --env development
+      - name: Start API and wait for readiness
+        run: |
+          npm run start --workspace=@bezzo/api > /tmp/bezzo-api.log 2>&1 &
+          echo $! > /tmp/bezzo-api.pid
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:4000/health/ready > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/bezzo-api.log
+          exit 1
+      - name: Exercise authenticated API integration scenarios
+        run: npm run test:integration --workspace=@bezzo/api
+      - name: Stop API
+        if: always()
+        run: if [ -f /tmp/bezzo-api.pid ]; then kill "$(cat /tmp/bezzo-api.pid)" || true; fi
+
+  flutter:
+    name: Flutter Android app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2.23.0
+        with:
+          flutter-version: 3.44.6
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+      - run: flutter build apk --debug

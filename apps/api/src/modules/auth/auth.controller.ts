@@ -43,7 +43,6 @@ export class AuthController {
       userId: result.userId,
       status: result.status,
       verificationRequired: result.verificationRequired,
-      ...(result.devOtp ? { devOtp: result.devOtp } : {}),
     };
   }
 

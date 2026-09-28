@@ -5,6 +5,7 @@ const baseEnv = {
   JWT_ACCESS_SECRET: 'access-secret-value-1234567890',
   JWT_REFRESH_SECRET: 'refresh-secret-value-1234567890',
   AUTH_OTP_PEPPER: 'otp-pepper',
+  CORS_ALLOWED_ORIGINS: 'https://app.bezzo.in',
 };
 
 describe('configuration', () => {
@@ -37,6 +38,55 @@ describe('configuration', () => {
         source: { ...baseEnv, NODE_ENV: 'production', DATABASE_SSL: 'false', STORAGE_DRIVER: 's3' },
       }),
     ).toThrow(/TLS/);
+  });
+
+  it('refuses a default refresh secret even when the access secret is set', () => {
+    expect(() =>
+      loadConfig({
+        source: {
+          ...baseEnv,
+          NODE_ENV: 'production',
+          JWT_REFRESH_SECRET: 'change-me-refresh-secret',
+          DATABASE_SSL: 'true',
+          STORAGE_DRIVER: 's3',
+          PAYMENTS_PROVIDER: 'razorpay',
+          RAZORPAY_KEY_ID: 'key',
+          RAZORPAY_KEY_SECRET: 'secret',
+          RAZORPAY_WEBHOOK_SECRET: 'webhook',
+        },
+      }),
+    ).toThrow(/JWT_REFRESH_SECRET/);
+  });
+
+  it('requires exact HTTPS CORS origins in production', () => {
+    expect(() =>
+      loadConfig({
+        source: {
+          ...baseEnv,
+          NODE_ENV: 'production',
+          DATABASE_SSL: 'true',
+          STORAGE_DRIVER: 's3',
+          CORS_ALLOWED_ORIGINS: '*',
+        },
+      }),
+    ).toThrow(/CORS origins must be exact HTTPS origins/);
+  });
+
+  it('refuses mock or unimplemented payment providers in production', () => {
+    expect(() =>
+      loadConfig({
+        source: {
+          ...baseEnv,
+          NODE_ENV: 'production',
+          DATABASE_SSL: 'true',
+          STORAGE_DRIVER: 's3',
+          PAYMENTS_PROVIDER: 'mock',
+          RAZORPAY_KEY_ID: undefined,
+          RAZORPAY_KEY_SECRET: undefined,
+          RAZORPAY_WEBHOOK_SECRET: undefined,
+        },
+      }),
+    ).toThrow(/Production requires the implemented live Razorpay provider/);
   });
 
   it('requires an opensearch node when search is enabled', () => {

@@ -20,18 +20,17 @@ export const registerSchema = z
     displayName: z.string().trim().min(2).max(120),
     businessName: z.string().trim().min(2).max(200).optional(),
     clientPlatform: z.enum(['web', 'android', 'ios', 'admin']).optional(),
-    acceptedTermsVersion: z.string().max(32).optional(),
-    /** Picker accounts are created by operations; self-registration requires an employee code. */
-    employeeCode: z.string().trim().max(32).optional(),
+    acceptedTermsVersion: z.string().trim().min(1).max(32),
+    /** Picker accounts are provisioned from a single-use invitation created by operations. */
     inviteCode: z.string().trim().max(64).optional(),
   })
   .refine((value) => Boolean(value.email || value.phone), {
     message: 'Either email or phone is required',
     path: ['email'],
   })
-  .refine((value) => value.accountType !== 'PICKER' || Boolean(value.employeeCode || value.inviteCode), {
-    message: 'Picker registration requires an employee code or invite code issued by Bezzo operations',
-    path: ['employeeCode'],
+  .refine((value) => value.accountType !== 'PICKER' || Boolean(value.inviteCode), {
+    message: 'Picker registration requires a valid invite code issued by Bezzo operations',
+    path: ['inviteCode'],
   });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

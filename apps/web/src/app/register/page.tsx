@@ -30,7 +30,6 @@ interface RegisterResponse {
   userId: string;
   status: string;
   verificationRequired: boolean;
-  devOtp?: string;
 }
 
 interface OtpRequestResponse {
@@ -57,7 +56,6 @@ export default function RegisterPage() {
     phone: '',
     password: '',
     inviteCode: '',
-    employeeCode: '',
   });
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [devOtp, setDevOtp] = useState<string | null>(null);
@@ -86,7 +84,6 @@ export default function RegisterPage() {
       if (accountType !== 'PICKER' && form.businessName.trim()) body.businessName = form.businessName.trim();
       if (accountType === 'PICKER') {
         if (form.inviteCode.trim()) body.inviteCode = form.inviteCode.trim();
-        if (form.employeeCode.trim()) body.employeeCode = form.employeeCode.trim();
       }
 
       await apiRequest<RegisterResponse>('/auth/register', { method: 'POST', body });
@@ -304,14 +301,6 @@ export default function RegisterPage() {
                     onChange={(event) => update('inviteCode', event.target.value)}
                   />
                   <span className="hint">Issued by Bezzo operations when you are onboarded.</span>
-                </div>
-                <div className="field">
-                  <label htmlFor="employeeCode">Employee code (optional)</label>
-                  <input
-                    id="employeeCode"
-                    value={form.employeeCode}
-                    onChange={(event) => update('employeeCode', event.target.value)}
-                  />
                 </div>
               </>
             )}

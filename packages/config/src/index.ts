@@ -48,6 +48,10 @@ const envSchema = z
     API_BASE_PATH: z.string().default('/api/v1'),
     API_PUBLIC_URL: z.string().default('http://localhost:4000'),
     API_BODY_LIMIT_BYTES: integerish(2 * 1024 * 1024),
+    CORS_ALLOWED_ORIGINS: z
+      .string()
+      .default('http://localhost:3000')
+      .transform((value) => value.split(',').map((origin) => origin.trim()).filter(Boolean)),
 
     // ---- Database
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — PostgreSQL is the source of truth'),
@@ -189,6 +193,25 @@ const envSchema = z
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production') {
+      if (env.CORS_ALLOWED_ORIGINS.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CORS_ALLOWED_ORIGINS'],
+          message: 'At least one explicit browser origin must be allowed in production',
+        });
+      }
+      for (const origin of env.CORS_ALLOWED_ORIGINS) {
+        try {
+          const parsed = new URL(origin);
+          if (parsed.protocol !== 'https:' || parsed.origin !== origin) throw new Error('invalid origin');
+        } catch {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['CORS_ALLOWED_ORIGINS'],
+            message: `Production CORS origins must be exact HTTPS origins (${origin})`,
+          });
+        }
+      }
       if (env.JWT_ACCESS_SECRET.includes('change-me')) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -217,12 +240,49 @@ const envSchema = z
           message: 'Database TLS must be enabled in production',
         });
       }
+      if (env.JWT_REFRESH_SECRET.includes('change-me')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['JWT_REFRESH_SECRET'],
+          message: 'Default JWT secrets must never be used in production',
+        });
+      }
+      if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['JWT_REFRESH_SECRET'],
+          message: 'Access-token and refresh-token secrets must be different',
+        });
+      }
+      if (env.AUTH_OTP_PEPPER.toLowerCase().includes('dev-otp')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['AUTH_OTP_PEPPER'],
+          message: 'Development OTP peppers must never be used in production',
+        });
+      }
       if (env.DATABASE_SSL_REJECT_UNAUTHORIZED === false) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['DATABASE_SSL_REJECT_UNAUTHORIZED'],
           message: 'Database TLS certificate verification must remain enabled in production',
         });
+      }
+      if (env.PAYMENTS_PROVIDER !== 'razorpay') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['PAYMENTS_PROVIDER'],
+          message: 'Production requires the implemented live Razorpay provider; mock and unimplemented providers are not allowed',
+        });
+      }
+      for (const key of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET'] as const) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required for production payments`,
+          });
+        }
       }
     }
     if (env.SEARCH_ENABLED && !env.OPENSEARCH_NODE) {

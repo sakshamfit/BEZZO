@@ -73,7 +73,7 @@ npm run dev --workspace=@bezzo/api
 
 ### Web application (`apps/web`)
 
-Next.js 15 (App Router, React 19, TypeScript strict). It is a pure API consumer:
+Next.js 16 (App Router, React 19, TypeScript strict). It is a pure API consumer:
 
 ```bash
 npm run dev --workspace=@bezzo/web      # next dev -H 0.0.0.0 -p 3000

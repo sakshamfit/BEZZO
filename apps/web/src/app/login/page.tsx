@@ -23,11 +23,21 @@ function landingFor(roles: string[]): string {
   return '/status';
 }
 
+function safeNextPath(candidate: string | null): string | null {
+  if (!candidate || !candidate.startsWith('/')) return null;
+  try {
+    const url = new URL(candidate, 'https://bezzo.invalid');
+    return url.origin === 'https://bezzo.invalid' ? `${url.pathname}${url.search}${url.hash}` : null;
+  } catch {
+    return null;
+  }
+}
+
 function LoginForm() {
   const { signIn, principal, ready } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next');
+  const next = safeNextPath(searchParams.get('next'));
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
