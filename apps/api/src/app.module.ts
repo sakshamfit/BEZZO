@@ -37,6 +37,7 @@ import { LogisticsInfraModule } from './infrastructure/logistics/logistics-infra
 import { NotificationsInfraModule } from './infrastructure/notifications/notification.service';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { IpRateLimitGuard } from './common/guards/ip-rate-limit.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
@@ -108,6 +109,7 @@ import { HubReceivingModule } from './modules/hub-receiving/hub-receiving.module
     WorkerModule,
   ],
   providers: [
+    { provide: APP_GUARD, useClass: IpRateLimitGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

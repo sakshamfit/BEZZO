@@ -2,9 +2,8 @@
  * Operational endpoints.
  *
  *  - `/health/live`  — process liveness (no dependencies touched, never fails on dependency outage);
- *  - `/health/ready` — readiness for traffic: verifies the database round-trip, reports Redis,
- *                      OpenSearch and worker state as degraded capabilities rather than failing the
- *                      pod, because BEZZO is designed to serve traffic in degraded mode;
+ *  - `/health/ready` — readiness for traffic: verifies the database round-trip and any required
+ *                      Redis dependency; optional Redis and OpenSearch are reported as degraded;
  *  - `/health`       — full dependency report for operators and the status page;
  *  - `/metrics`      — Prometheus exposition (disabled in production unless METRICS_ENABLED=true).
  *
@@ -51,18 +50,20 @@ export class PlatformController {
   @Public()
   @Get('health/ready')
   @ApiOperation({ summary: 'Readiness probe with dependency round-trips' })
-  async ready() {
+  async ready(@Res({ passthrough: true }) reply: FastifyReply) {
     const databasePing = await this.database.ping().catch(() => ({ ok: false, latencyMs: 0 }));
     const databaseOk = databasePing.ok;
     const cacheOk = await this.cache.ping().catch(() => false);
     const searchStatus = this.search.status();
-    const degraded = !databaseOk || !cacheOk;
+    const cacheRequired = this.config.REDIS_REQUIRED;
+    const unavailable = !databaseOk || (cacheRequired && !cacheOk);
+    if (unavailable) reply.status(503);
     return {
-      status: databaseOk ? (degraded ? 'degraded' : 'ok') : 'unavailable',
+      status: unavailable ? 'unavailable' : cacheOk ? 'ok' : 'degraded',
       checks: {
         database: databaseOk ? 'ok' : 'failed',
         databaseLatencyMs: databasePing.latencyMs,
-        cache: cacheOk ? 'ok' : 'degraded',
+        cache: cacheOk ? 'ok' : cacheRequired ? 'failed' : 'degraded',
         search: searchStatus.available ? 'ok' : 'degraded',
         searchProvider: searchStatus.provider,
       },
@@ -76,26 +77,37 @@ export class PlatformController {
   @Public()
   @Get('health')
   @ApiOperation({ summary: 'Full dependency and capability report' })
-  async health() {
+  async health(@Res({ passthrough: true }) reply: FastifyReply) {
     const startedAt = Date.now();
     const databasePing = await this.database.ping().catch(() => ({ ok: false, latencyMs: 0 }));
     const databaseOk = databasePing.ok;
     const databaseLatencyMs = Date.now() - startedAt;
     const pool = await this.database.poolStats().catch(() => ({ total: 0, idle: 0, waiting: 0 }));
     const cacheOk = await this.cache.ping().catch(() => false);
+    if (!databaseOk || (this.config.REDIS_REQUIRED && !cacheOk)) reply.status(503);
     const searchStatus = this.search.status();
-    const pendingSearchJobs = searchStatus.available ? await this.search.pendingCount().catch(() => 0) : 0;
+    const pendingSearchJobs = searchStatus.available
+      ? await this.search.pendingCount().catch(() => 0)
+      : 0;
 
     return {
-      status: databaseOk ? 'ok' : 'unavailable',
+      status: databaseOk && (!this.config.REDIS_REQUIRED || cacheOk) ? 'ok' : 'unavailable',
       service: 'bezzo-api',
       version: this.config.APP_VERSION,
       environment: this.config.NODE_ENV,
       uptimeSeconds: Math.round(process.uptime()),
       dependencies: {
         database: { status: databaseOk ? 'ok' : 'down', latencyMs: databaseLatencyMs, pool },
-        redis: { status: cacheOk ? 'ok' : 'down', driver: this.cache.status().driver, usedInMemoryFallback: this.cache.isUsingFallback() },
-        search: { status: searchStatus.available ? 'ok' : 'fallback', provider: searchStatus.provider, pendingJobs: pendingSearchJobs },
+        redis: {
+          status: cacheOk ? 'ok' : 'down',
+          driver: this.cache.status().driver,
+          usedInMemoryFallback: this.cache.isUsingFallback(),
+        },
+        search: {
+          status: searchStatus.available ? 'ok' : 'fallback',
+          provider: searchStatus.provider,
+          pendingJobs: pendingSearchJobs,
+        },
         payments: { provider: this.config.PAYMENTS_PROVIDER },
         logistics: { provider: this.config.LOGISTICS_PROVIDER },
         storage: { driver: this.config.STORAGE_DRIVER },
@@ -111,7 +123,10 @@ export class PlatformController {
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   async metricsEndpoint(@Res() reply: FastifyReply): Promise<void> {
     if (this.config.NODE_ENV === 'production' && !this.config.METRICS_ENABLED) {
-      reply.status(404).send({ success: false, error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: SERVICE_UNAVAILABLE_DETAIL } });
+      reply.status(404).send({
+        success: false,
+        error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: SERVICE_UNAVAILABLE_DETAIL },
+      });
       return;
     }
     const payload = await this.metrics.render();

@@ -12,6 +12,7 @@ export const API_BASE = `${API_URL}/api/v1`;
 
 export interface ApiResponse<T = unknown> {
   status: number;
+  setCookie: string | null;
   body: T & { data?: unknown; error?: { code?: string; message?: string } };
   data: unknown;
   errorCode: string | null;
@@ -29,7 +30,10 @@ export class ApiClient {
     path: string,
     options: { body?: unknown; headers?: Record<string, string> } = {},
   ): Promise<ApiResponse<T>> {
-    const headers: Record<string, string> = { 'content-type': 'application/json', ...options.headers };
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      ...options.headers,
+    };
     if (this.token) headers.authorization = `Bearer ${this.token}`;
 
     const response = await fetch(`${API_BASE}${path}`, {
@@ -47,6 +51,7 @@ export class ApiClient {
     const error = parsed.error as { code?: string } | undefined;
     return {
       status: response.status,
+      setCookie: response.headers.get('set-cookie'),
       body: parsed as ApiResponse<T>['body'],
       data: parsed.data,
       errorCode: error?.code ?? null,
@@ -86,7 +91,9 @@ export async function signIn(identifier: string, password = 'Bezzo@12345'): Prom
   const anonymous = new ApiClient();
   const response = await anonymous.post('/auth/login', { identifier, password, deviceType: 'web' });
   if (response.status !== 200 && response.status !== 201) {
-    throw new Error(`Sign-in failed for ${identifier}: ${response.status} ${JSON.stringify(response.body)}`);
+    throw new Error(
+      `Sign-in failed for ${identifier}: ${response.status} ${JSON.stringify(response.body)}`,
+    );
   }
   const data = response.data as {
     accessToken: string;
@@ -100,7 +107,9 @@ export async function signIn(identifier: string, password = 'Bezzo@12345'): Prom
     };
   };
   if (!data.principal || !data.accessToken) {
-    throw new Error(`Sign-in response for ${identifier} has no principal: ${JSON.stringify(response.body)}`);
+    throw new Error(
+      `Sign-in response for ${identifier} has no principal: ${JSON.stringify(response.body)}`,
+    );
   }
   return {
     token: data.accessToken,
@@ -137,7 +146,8 @@ export async function waitForApi(timeoutMs = 30_000): Promise<void> {
     } catch {
       // still booting
     }
-    if (Date.now() - started > timeoutMs) throw new Error(`API at ${API_URL} did not become healthy`);
+    if (Date.now() - started > timeoutMs)
+      throw new Error(`API at ${API_URL} did not become healthy`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }

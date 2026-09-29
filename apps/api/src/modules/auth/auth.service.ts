@@ -35,7 +35,12 @@ import { AuditService } from '../../infrastructure/audit/audit.service';
 import { NotificationService } from '../../infrastructure/notifications/notification.service';
 import { DomainError } from '../../common/errors/domain-error';
 import { getRequestContext } from '../../common/context/request-context';
-import type { LoginInput, RegisterInput, RequestOtpInput, VerifyOtpInput } from './dto/auth.schemas';
+import type {
+  LoginInput,
+  RegisterInput,
+  RequestOtpInput,
+  VerifyOtpInput,
+} from './dto/auth.schemas';
 import { ROLE_FOR_ACCOUNT_TYPE } from './dto/auth.schemas';
 
 export interface IssuedTokens {
@@ -83,10 +88,14 @@ export class AuthService {
   }> {
     const strength = validatePasswordStrength(input.password, this.config.AUTH_PASSWORD_MIN_LENGTH);
     if (!strength.valid) {
-      throw new DomainError(ErrorCode.WEAK_PASSWORD, 'The password does not meet the security policy', {
-        httpStatus: 422,
-        details: { violations: strength.errors },
-      });
+      throw new DomainError(
+        ErrorCode.WEAK_PASSWORD,
+        'The password does not meet the security policy',
+        {
+          httpStatus: 422,
+          details: { violations: strength.errors },
+        },
+      );
     }
 
     const email = input.email ?? null;
@@ -98,7 +107,10 @@ export class AuthService {
         [email],
       );
       if (existing) {
-        throw new DomainError(ErrorCode.IDENTIFIER_ALREADY_REGISTERED, 'An account already exists for this email');
+        throw new DomainError(
+          ErrorCode.IDENTIFIER_ALREADY_REGISTERED,
+          'An account already exists for this email',
+        );
       }
     }
     if (phone) {
@@ -107,7 +119,10 @@ export class AuthService {
         [phone],
       );
       if (existing) {
-        throw new DomainError(ErrorCode.IDENTIFIER_ALREADY_REGISTERED, 'An account already exists for this phone number');
+        throw new DomainError(
+          ErrorCode.IDENTIFIER_ALREADY_REGISTERED,
+          'An account already exists for this phone number',
+        );
       }
     }
 
@@ -138,9 +153,13 @@ export class AuthService {
           [input.inviteCode, userId],
         );
         if (!invite.rows[0]) {
-          throw new DomainError(ErrorCode.VALIDATION_FAILED, 'This picker invite code is invalid or has expired', {
-            httpStatus: 422,
-          });
+          throw new DomainError(
+            ErrorCode.VALIDATION_FAILED,
+            'This picker invite code is invalid or has expired',
+            {
+              httpStatus: 422,
+            },
+          );
         }
         pickerHomeHubId = invite.rows[0].home_hub_id;
       }
@@ -161,9 +180,13 @@ export class AuthService {
         }
       }
 
-      const role = await client.query<{ id: string }>(`SELECT id FROM roles WHERE code = $1`, [roleCode]);
+      const role = await client.query<{ id: string }>(`SELECT id FROM roles WHERE code = $1`, [
+        roleCode,
+      ]);
       if (!role.rows[0]?.id) {
-        throw new Error(`Role ${roleCode} is missing — run the reference seed before starting the API`);
+        throw new Error(
+          `Role ${roleCode} is missing — run the reference seed before starting the API`,
+        );
       }
       await client.query(
         `INSERT INTO user_roles (user_id, role_id, organization_id, granted_at) VALUES ($1, $2, $3, now())`,
@@ -174,7 +197,12 @@ export class AuthService {
         await client.query(
           `INSERT INTO buyers (user_id, organization_id, business_name, store_name, status, verification_status)
            VALUES ($1, $2, $3, $4, 'PENDING_VERIFICATION', 'REGISTERED')`,
-          [userId, organizationId, input.businessName ?? input.displayName, input.businessName ?? input.displayName],
+          [
+            userId,
+            organizationId,
+            input.businessName ?? input.displayName,
+            input.businessName ?? input.displayName,
+          ],
         );
         await client.query(
           `INSERT INTO buyer_settings (buyer_id) SELECT id FROM buyers WHERE user_id = $1
@@ -194,7 +222,9 @@ export class AuthService {
       if (input.accountType === 'PICKER') {
         const fallbackHub = pickerHomeHubId
           ? null
-          : await client.query<{ id: string }>(`SELECT id FROM collection_hubs ORDER BY code LIMIT 1`);
+          : await client.query<{ id: string }>(
+              `SELECT id FROM collection_hubs ORDER BY code LIMIT 1`,
+            );
         const hubId = pickerHomeHubId ?? fallbackHub?.rows[0]?.id ?? null;
         await client.query(
           `INSERT INTO pickers (user_id, employee_code, status, phone, home_hub_id)
@@ -241,7 +271,10 @@ export class AuthService {
     // Rate limit per identifier before touching the database (api spec §9).
     const attempts = await this.cache.increment(`otp:rate:${identifier}`, 3600);
     if (attempts > 10) {
-      throw new DomainError(ErrorCode.RATE_LIMIT_EXCEEDED, 'Too many OTP requests. Please try again later.');
+      throw new DomainError(
+        ErrorCode.RATE_LIMIT_EXCEEDED,
+        'Too many OTP requests. Please try again later.',
+      );
     }
 
     const user = await this.database.row<{ id: string; status: string }>(
@@ -268,7 +301,12 @@ export class AuthService {
     userId: string;
     identifier: string;
     purpose: RequestOtpInput['purpose'];
-  }): Promise<{ challengeId: string; expiresInSeconds: number; destinationMasked: string; devOtp: string | null }> {
+  }): Promise<{
+    challengeId: string;
+    expiresInSeconds: number;
+    destinationMasked: string;
+    devOtp: string | null;
+  }> {
     const code = generateNumericOtp(6);
     const identifierType = input.identifier.includes('@') ? OTP_TYPES.EMAIL : OTP_TYPES.PHONE;
 
@@ -339,12 +377,23 @@ export class AuthService {
       throw new DomainError(ErrorCode.OTP_EXPIRED, 'This verification code has expired');
     }
     if (challenge.attempts >= challenge.max_attempts) {
-      throw new DomainError(ErrorCode.OTP_ATTEMPTS_EXCEEDED, 'Too many incorrect attempts for this code');
+      throw new DomainError(
+        ErrorCode.OTP_ATTEMPTS_EXCEEDED,
+        'Too many incorrect attempts for this code',
+      );
     }
 
     const expected = hashOtp(input.code, this.config.AUTH_OTP_PEPPER);
     if (!timingSafeEqualHex(expected, challenge.code_hash)) {
-      await this.database.query(`UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = $1`, [challenge.id]);
+      await this.database.query(
+        `UPDATE otp_challenges
+            SET attempts = LEAST(attempts + 1, max_attempts)
+          WHERE id = $1
+            AND consumed_at IS NULL
+            AND expires_at > now()
+            AND attempts < max_attempts`,
+        [challenge.id],
+      );
       await this.recordAuthEvent({
         userId: challenge.user_id,
         identifier: challenge.identifier,
@@ -356,7 +405,45 @@ export class AuthService {
     }
 
     await this.database.transaction(async (client) => {
-      await client.query(`UPDATE otp_challenges SET consumed_at = now() WHERE id = $1`, [challenge.id]);
+      // Claim the challenge with one conditional write. Under READ COMMITTED, concurrent requests
+      // serialize on this row; after the winner commits, every loser rechecks the predicate and gets
+      // no row back, so a one-time code can never create multiple sessions.
+      const consumed = await client.query<{ id: string }>(
+        `UPDATE otp_challenges
+            SET consumed_at = now()
+          WHERE id = $1
+            AND code_hash = $2
+            AND consumed_at IS NULL
+            AND expires_at > now()
+            AND attempts < max_attempts
+          RETURNING id`,
+        [challenge.id, expected],
+      );
+
+      if (!consumed.rows[0]) {
+        // Preserve the specific expired/attempt-limit responses when another concurrent request
+        // changed the challenge state. A consumed challenge is always an invalid one-time code.
+        const latest = await client.query<{
+          consumed_at: Date | null;
+          expires_at: Date;
+          attempts: number;
+          max_attempts: number;
+        }>(
+          `SELECT consumed_at, expires_at, attempts, max_attempts FROM otp_challenges WHERE id = $1`,
+          [challenge.id],
+        );
+        const current = latest.rows[0];
+        if (current && current.expires_at.getTime() <= Date.now()) {
+          throw new DomainError(ErrorCode.OTP_EXPIRED, 'This verification code has expired');
+        }
+        if (current && current.attempts >= current.max_attempts) {
+          throw new DomainError(
+            ErrorCode.OTP_ATTEMPTS_EXCEEDED,
+            'Too many incorrect attempts for this code',
+          );
+        }
+        throw new DomainError(ErrorCode.INVALID_OTP, 'This verification code is not valid');
+      }
 
       if (challenge.identifier_type === OTP_TYPES.EMAIL) {
         await client.query(
@@ -447,13 +534,20 @@ export class AuthService {
         success: false,
         reason: 'UNKNOWN_ACCOUNT',
       });
-      throw new DomainError(ErrorCode.INVALID_CREDENTIALS, 'The credentials provided are incorrect');
+      throw new DomainError(
+        ErrorCode.INVALID_CREDENTIALS,
+        'The credentials provided are incorrect',
+      );
     }
 
     if (user.locked_until && user.locked_until.getTime() > Date.now()) {
-      throw new DomainError(ErrorCode.ACCOUNT_LOCKED, 'This account is temporarily locked after repeated failed attempts', {
-        details: { lockedUntil: user.locked_until.toISOString() },
-      });
+      throw new DomainError(
+        ErrorCode.ACCOUNT_LOCKED,
+        'This account is temporarily locked after repeated failed attempts',
+        {
+          details: { lockedUntil: user.locked_until.toISOString() },
+        },
+      );
     }
     if (user.status === 'SUSPENDED' || user.status === 'DEACTIVATED') {
       throw new DomainError(ErrorCode.ACCOUNT_DISABLED, 'This account is not permitted to sign in');
@@ -469,7 +563,10 @@ export class AuthService {
         success: false,
         reason: 'BAD_PASSWORD',
       });
-      throw new DomainError(ErrorCode.INVALID_CREDENTIALS, 'The credentials provided are incorrect');
+      throw new DomainError(
+        ErrorCode.INVALID_CREDENTIALS,
+        'The credentials provided are incorrect',
+      );
     }
 
     if (user.status === 'PENDING') {
@@ -480,7 +577,10 @@ export class AuthService {
         success: false,
         reason: 'CONTACT_NOT_VERIFIED',
       });
-      throw new DomainError(ErrorCode.ACCOUNT_DISABLED, 'Verify your registered email or phone before signing in');
+      throw new DomainError(
+        ErrorCode.ACCOUNT_DISABLED,
+        'Verify your registered email or phone before signing in',
+      );
     }
 
     await this.database.query(
@@ -490,13 +590,18 @@ export class AuthService {
 
     if (await needsRehash(user.password_hash)) {
       const upgraded = await hashPassword(input.password);
-      await this.database.query(`UPDATE users SET password_hash = $2, password_updated_at = now() WHERE id = $1`, [
-        user.id,
-        upgraded,
-      ]);
+      await this.database.query(
+        `UPDATE users SET password_hash = $2, password_updated_at = now() WHERE id = $1`,
+        [user.id, upgraded],
+      );
     }
 
-    await this.recordAuthEvent({ userId: user.id, identifier, eventType: 'password.login', success: true });
+    await this.recordAuthEvent({
+      userId: user.id,
+      identifier,
+      eventType: 'password.login',
+      success: true,
+    });
 
     const tokens = await this.issueSession({
       user: { id: user.id },
@@ -596,7 +701,10 @@ export class AuthService {
    * Presenting a token that was already rotated means the token leaked: the whole family is revoked
    * and a security event is recorded.
    */
-  async refresh(input: { refreshToken: string; deviceType?: string }): Promise<IssuedTokens & { userId: string }> {
+  async refresh(input: {
+    refreshToken: string;
+    deviceType?: string;
+  }): Promise<IssuedTokens & { userId: string }> {
     const hash = sha256Hex(input.refreshToken);
     const session = await this.database.row<{
       id: string;
@@ -617,15 +725,92 @@ export class AuthService {
     if (!session) {
       throw new DomainError(ErrorCode.INVALID_TOKEN, 'The refresh token is invalid');
     }
-    if (session.replaced_by_session_id) {
-      await this.database.query(
-        `UPDATE sessions SET revoked_at = now(), revoked_reason = 'REFRESH_TOKEN_REUSE'
-          WHERE token_family_id = $1 AND revoked_at IS NULL`,
-        [session.token_family_id],
+    if (session.user_status === 'SUSPENDED' || session.user_status === 'DEACTIVATED') {
+      throw new DomainError(ErrorCode.ACCOUNT_DISABLED, 'This account is not permitted to sign in');
+    }
+
+    const refreshToken = generateSecureToken(48);
+    const refreshHash = sha256Hex(refreshToken);
+    const expiresAt = new Date(Date.now() + this.config.JWT_REFRESH_TTL_SECONDS * 1000);
+    const context = getRequestContext();
+    const rotation = await this.database.transaction(async (client) => {
+      // Claim and replace the old session in one transaction. A competing refresh waits on this
+      // row; after the winner commits, its conditional UPDATE returns no row and the loser observes
+      // the replacement below, preserving the token-family replay response.
+      const claimed = await client.query<{ user_id: string; token_family_id: string }>(
+        `UPDATE sessions s
+            SET revoked_at = now(), revoked_reason = 'ROTATED', last_seen_at = now()
+           FROM users u
+          WHERE s.id = $1 AND s.refresh_token_hash = $2 AND s.user_id = u.id
+            AND s.revoked_at IS NULL AND s.replaced_by_session_id IS NULL AND s.expires_at > now()
+            AND u.status NOT IN ('SUSPENDED', 'DEACTIVATED')
+          RETURNING s.user_id, s.token_family_id`,
+        [session.id, hash],
       );
-      await this.cache.invalidatePrefix(`actor:${session.user_id}:`);
+
+      if (!claimed.rows[0]) {
+        const latest = await client.query<{
+          token_family_id: string;
+          revoked_at: Date | null;
+          revoked_reason: string | null;
+          expires_at: Date;
+          replaced_by_session_id: string | null;
+          user_status: string;
+        }>(
+          `SELECT s.token_family_id, s.revoked_at, s.revoked_reason, s.expires_at,
+                  s.replaced_by_session_id, u.status AS user_status
+             FROM sessions s JOIN users u ON u.id = s.user_id
+            WHERE s.id = $1 AND s.refresh_token_hash = $2`,
+          [session.id, hash],
+        );
+        const current = latest.rows[0];
+        if (!current) return { kind: 'invalid' as const };
+
+        // ROTATED without a pointer is included for recovery of rows rotated by older versions,
+        // which wrote revocation and the child pointer as separate statements.
+        if (current.replaced_by_session_id || current.revoked_reason === 'ROTATED') {
+          await client.query(
+            `UPDATE sessions SET revoked_at = now(), revoked_reason = 'REFRESH_TOKEN_REUSE'
+              WHERE token_family_id = $1 AND revoked_at IS NULL`,
+            [current.token_family_id],
+          );
+          return { kind: 'reused' as const, userId: session.user_id };
+        }
+        if (current.user_status === 'SUSPENDED' || current.user_status === 'DEACTIVATED') {
+          return { kind: 'disabled' as const };
+        }
+        if (current.expires_at.getTime() <= Date.now()) return { kind: 'expired' as const };
+        return { kind: 'revoked' as const };
+      }
+
+      const child = await client.query<{ id: string }>(
+        `INSERT INTO sessions (user_id, token_family_id, refresh_token_hash, device_type, ip_address,
+                               user_agent, authentication_method, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'REFRESH', $7)
+         RETURNING id`,
+        [
+          claimed.rows[0].user_id,
+          claimed.rows[0].token_family_id,
+          refreshHash,
+          input.deviceType ?? context?.clientPlatform ?? null,
+          context?.ipAddress ?? null,
+          context?.userAgent ?? null,
+          expiresAt,
+        ],
+      );
+      const childId = child.rows[0]?.id;
+      if (!childId) throw new Error('Failed to create rotated session');
+      await client.query(`UPDATE sessions SET replaced_by_session_id = $2 WHERE id = $1`, [
+        session.id,
+        childId,
+      ]);
+      return { kind: 'rotated' as const, userId: claimed.rows[0].user_id, sessionId: childId };
+    });
+
+    if (rotation.kind === 'reused') {
+      await this.cache.invalidatePrefix(`actor:${rotation.userId}:`);
       await this.recordAuthEvent({
-        userId: session.user_id,
+        userId: rotation.userId,
         identifier: null,
         eventType: 'token.reuse_detected',
         success: false,
@@ -636,30 +821,37 @@ export class AuthService {
         'This refresh token was already used. All sessions on this device have been revoked.',
       );
     }
-    if (session.revoked_at) {
-      throw new DomainError(ErrorCode.SESSION_REVOKED, 'This session has been revoked');
+    if (rotation.kind === 'invalid') {
+      throw new DomainError(ErrorCode.INVALID_TOKEN, 'The refresh token is invalid');
     }
-    if (session.expires_at.getTime() < Date.now()) {
-      throw new DomainError(ErrorCode.SESSION_EXPIRED, 'This session has expired');
-    }
-    if (session.user_status === 'SUSPENDED' || session.user_status === 'DEACTIVATED') {
+    if (rotation.kind === 'disabled') {
       throw new DomainError(ErrorCode.ACCOUNT_DISABLED, 'This account is not permitted to sign in');
     }
+    if (rotation.kind === 'expired') {
+      throw new DomainError(ErrorCode.SESSION_EXPIRED, 'This session has expired');
+    }
+    if (rotation.kind === 'revoked') {
+      throw new DomainError(ErrorCode.SESSION_REVOKED, 'This session has been revoked');
+    }
 
-    await this.database.query(
-      `UPDATE sessions SET revoked_at = now(), revoked_reason = 'ROTATED', last_seen_at = now() WHERE id = $1`,
-      [session.id],
+    await this.cache.del(`actor:${rotation.userId}:${session.id}`);
+    const accessToken = await this.jwt.signAsync(
+      {
+        sub: rotation.userId,
+        sid: rotation.sessionId,
+        role: await this.primaryRole(rotation.userId),
+      },
+      { secret: this.config.JWT_ACCESS_SECRET, expiresIn: this.config.JWT_ACCESS_TTL_SECONDS },
     );
-    await this.cache.del(`actor:${session.user_id}:${session.id}`);
-
-    const tokens = await this.issueSession({
-      user: { id: session.user_id },
-      authenticationMethod: 'REFRESH',
-      deviceType: input.deviceType,
-      tokenFamilyId: session.token_family_id,
-      rotatesSessionId: session.id,
-    });
-    return { ...tokens, userId: session.user_id };
+    return {
+      accessToken,
+      refreshToken,
+      accessTokenExpiresIn: this.config.JWT_ACCESS_TTL_SECONDS,
+      refreshTokenExpiresIn: this.config.JWT_REFRESH_TTL_SECONDS,
+      tokenType: 'Bearer',
+      sessionId: rotation.sessionId,
+      userId: rotation.userId,
+    };
   }
 
   async logout(input: { userId: string; sessionId: string; allSessions?: boolean }): Promise<void> {
@@ -729,25 +921,39 @@ export class AuthService {
 
   /* ---------------------------------------------------------------- password change */
 
-  async changePassword(input: { userId: string; currentPassword: string; newPassword: string }): Promise<void> {
+  async changePassword(input: {
+    userId: string;
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<void> {
     const user = await this.database.row<{ password_hash: string | null }>(
       `SELECT password_hash FROM users WHERE id = $1`,
       [input.userId],
     );
     if (!user?.password_hash) {
-      throw new DomainError(ErrorCode.INVALID_CREDENTIALS, 'This account does not use password authentication');
+      throw new DomainError(
+        ErrorCode.INVALID_CREDENTIALS,
+        'This account does not use password authentication',
+      );
     }
     const valid = await verifyPassword(input.currentPassword, user.password_hash);
     if (!valid) {
       throw new DomainError(ErrorCode.INVALID_CREDENTIALS, 'The current password is incorrect');
     }
 
-    const policy = validatePasswordStrength(input.newPassword, this.config.AUTH_PASSWORD_MIN_LENGTH);
+    const policy = validatePasswordStrength(
+      input.newPassword,
+      this.config.AUTH_PASSWORD_MIN_LENGTH,
+    );
     if (!policy.valid) {
-      throw new DomainError(ErrorCode.WEAK_PASSWORD, 'The new password does not meet the security policy', {
-        httpStatus: 422,
-        details: { violations: policy.errors },
-      });
+      throw new DomainError(
+        ErrorCode.WEAK_PASSWORD,
+        'The new password does not meet the security policy',
+        {
+          httpStatus: 422,
+          details: { violations: policy.errors },
+        },
+      );
     }
 
     const history = await this.database.rows<{ password_hash: string }>(
@@ -756,9 +962,13 @@ export class AuthService {
     );
     for (const entry of history) {
       if (await verifyPassword(input.newPassword, entry.password_hash)) {
-        throw new DomainError(ErrorCode.WEAK_PASSWORD, 'This password was used recently. Choose a different password.', {
-          httpStatus: 422,
-        });
+        throw new DomainError(
+          ErrorCode.WEAK_PASSWORD,
+          'This password was used recently. Choose a different password.',
+          {
+            httpStatus: 422,
+          },
+        );
       }
     }
 
@@ -769,10 +979,10 @@ export class AuthService {
          SELECT $1, password_hash FROM users WHERE id = $1 AND password_hash IS NOT NULL`,
         [input.userId],
       );
-      await client.query(`UPDATE users SET password_hash = $2, password_updated_at = now() WHERE id = $1`, [
-        input.userId,
-        newHash,
-      ]);
+      await client.query(
+        `UPDATE users SET password_hash = $2, password_updated_at = now() WHERE id = $1`,
+        [input.userId, newHash],
+      );
       // A password change revokes every existing session.
       await client.query(
         `UPDATE sessions SET revoked_at = now(), revoked_reason = 'PASSWORD_CHANGED'
@@ -786,6 +996,97 @@ export class AuthService {
       });
     });
     await this.cache.invalidatePrefix(`actor:${input.userId}:`);
+  }
+
+  /** Reset with a single-use contact challenge; all existing sessions are revoked on success. */
+  async resetPassword(input: {
+    challengeId: string;
+    code: string;
+    newPassword: string;
+  }): Promise<void> {
+    const policy = validatePasswordStrength(
+      input.newPassword,
+      this.config.AUTH_PASSWORD_MIN_LENGTH,
+    );
+    if (!policy.valid) {
+      throw new DomainError(
+        ErrorCode.WEAK_PASSWORD,
+        'The new password does not meet the security policy',
+        {
+          httpStatus: 422,
+          details: { violations: policy.errors },
+        },
+      );
+    }
+
+    const challenge = await this.database.row<{
+      user_id: string | null;
+      purpose: string;
+      password_hash: string | null;
+    }>(
+      `SELECT c.user_id, c.purpose, u.password_hash
+         FROM otp_challenges c LEFT JOIN users u ON u.id = c.user_id
+        WHERE c.id = $1`,
+      [input.challengeId],
+    );
+    if (!challenge?.user_id || challenge.purpose !== 'PASSWORD_RESET') {
+      throw new DomainError(ErrorCode.INVALID_OTP, 'This verification code is not valid');
+    }
+
+    if (
+      challenge.password_hash &&
+      (await verifyPassword(input.newPassword, challenge.password_hash))
+    ) {
+      throw new DomainError(
+        ErrorCode.WEAK_PASSWORD,
+        'Choose a password you have not used before.',
+        {
+          httpStatus: 422,
+        },
+      );
+    }
+    const history = await this.database.rows<{ password_hash: string }>(
+      `SELECT password_hash FROM password_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 5`,
+      [challenge.user_id],
+    );
+    for (const entry of history) {
+      if (await verifyPassword(input.newPassword, entry.password_hash)) {
+        throw new DomainError(
+          ErrorCode.WEAK_PASSWORD,
+          'This password was used recently. Choose a different password.',
+          {
+            httpStatus: 422,
+          },
+        );
+      }
+    }
+
+    await this.verifyOtp({ challengeId: input.challengeId, code: input.code });
+    const newHash = await hashPassword(input.newPassword);
+    await this.database.transaction(async (client) => {
+      await client.query(
+        `INSERT INTO password_history (user_id, password_hash)
+         SELECT id, password_hash FROM users WHERE id = $1 AND password_hash IS NOT NULL`,
+        [challenge.user_id],
+      );
+      await client.query(
+        `UPDATE users
+            SET password_hash = $2, password_updated_at = now(), failed_login_count = 0, locked_until = NULL
+          WHERE id = $1`,
+        [challenge.user_id, newHash],
+      );
+      await client.query(
+        `UPDATE sessions SET revoked_at = now(), revoked_reason = 'PASSWORD_RESET'
+          WHERE user_id = $1 AND revoked_at IS NULL`,
+        [challenge.user_id],
+      );
+      await this.audit.record(client, {
+        action: 'auth.password_reset',
+        resourceType: 'user',
+        resourceId: challenge.user_id,
+      });
+    });
+    await this.cache.invalidatePrefix(`actor:${challenge.user_id}:`);
   }
 
   /* ------------------------------------------------------------------ principal */
@@ -856,7 +1157,11 @@ export class AuthService {
         ? { id: row.organization_id, type: row.organization_type, name: row.organization_name }
         : null,
       supplier: row.supplier_id
-        ? { id: row.supplier_id, status: row.supplier_status, verificationStatus: row.supplier_verification_status }
+        ? {
+            id: row.supplier_id,
+            status: row.supplier_status,
+            verificationStatus: row.supplier_verification_status,
+          }
         : null,
       buyer: row.buyer_id ? { id: row.buyer_id, status: row.buyer_status } : null,
       picker: row.picker_id ? { id: row.picker_id, status: row.picker_status } : null,

@@ -3,13 +3,9 @@
 /**
  * Session management for the web client.
  *
- * The browser holds the tokens; the API remains the only authority. A 401 triggers exactly one
- * refresh-and-retry, and a failed refresh clears the session so the UI immediately reflects reality.
- *
- * Storage note: tokens live in `localStorage` because the API authenticates with bearer tokens and
- * must also serve the mobile clients. The production hardening path (httpOnly, SameSite=strict
- * refresh cookies issued by the same origin) is recorded in the security specification; nothing in
- * this client is trusted by the API either way.
+ * The access token stays in memory for bearer API calls. The rotating refresh token is held only in
+ * an HttpOnly, SameSite cookie set by the same-origin API proxy; it is never exposed to browser JS.
+ * A page reload restores the session by rotating that cookie, and a 401 triggers one refresh/retry.
  */
 import {
   createContext,
@@ -52,14 +48,13 @@ export interface Principal {
 
 interface SessionState {
   accessToken: string;
-  refreshToken: string;
   principal: Principal;
   expiresAt: number;
 }
 
 interface SessionResponse {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   accessTokenExpiresIn: number;
   principal: Principal;
 }
@@ -84,8 +79,6 @@ interface AuthContextValue {
   hasPermission: (...permissions: string[]) => boolean;
 }
 
-const STORAGE_KEY = 'bezzo.session.v1';
-
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -98,38 +91,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionRef.current = session;
   }, [session]);
 
-  // Restore a previous session and validate it against the server before showing a signed-in UI.
+  // Restore from the HttpOnly refresh cookie; no session credential is read from browser storage.
   useEffect(() => {
     let cancelled = false;
-    const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      setReady(true);
-      return;
-    }
+    // Remove refresh credentials left by older web builds that persisted them in localStorage.
     try {
-      const stored = JSON.parse(raw) as SessionState;
-      sessionRef.current = stored;
-      setSession(stored);
-      void apiRequest<Principal>('/me', { token: stored.accessToken })
-        .then((principal) => {
-          if (cancelled) return;
-          const next = { ...stored, principal };
-          setSession(next);
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        })
-        .catch(() => {
-          if (cancelled) return;
-          window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem('bezzo.session.v1');
+    } catch {
+      // Session restoration relies on the HttpOnly cookie, not browser storage availability.
+    }
+    void apiRequest<SessionResponse>('/auth/refresh', {
+      method: 'POST',
+      body: { deviceType: 'web' },
+    })
+      .then((data) => {
+        if (cancelled) return;
+        const restored: SessionState = {
+          accessToken: data.accessToken,
+          principal: data.principal,
+          expiresAt: Date.now() + data.accessTokenExpiresIn * 1000,
+        };
+        sessionRef.current = restored;
+        setSession(restored);
+      })
+      .catch(() => {
+        if (!cancelled) {
           sessionRef.current = null;
           setSession(null);
-        })
-        .finally(() => {
-          if (!cancelled) setReady(true);
-        });
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-      setReady(true);
-    }
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -138,9 +131,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const persist = useCallback((next: SessionState | null) => {
     sessionRef.current = next;
     setSession(next);
-    if (typeof window === 'undefined') return;
-    if (next) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    else window.localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   const signIn = useCallback(
@@ -151,7 +141,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       const next: SessionState = {
         accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
         principal: data.principal,
         expiresAt: Date.now() + data.accessTokenExpiresIn * 1000,
       };
@@ -166,7 +155,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persist(null);
     if (!current) return;
     try {
-      await apiRequest('/auth/logout', { method: 'POST', token: current.accessToken, body: { allSessions: false } });
+      await apiRequest('/auth/logout', {
+        method: 'POST',
+        token: current.accessToken,
+        body: { allSessions: false },
+      });
     } catch {
       // The session is already cleared locally; a failed revocation is reported by the API's audit log.
     }
@@ -181,11 +174,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const data = await apiRequest<SessionResponse>('/auth/refresh', {
           method: 'POST',
-          body: { refreshToken: current.refreshToken, deviceType: 'web' },
+          body: { deviceType: 'web' },
         });
         const next: SessionState = {
           accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
           principal: data.principal,
           expiresAt: Date.now() + data.accessTokenExpiresIn * 1000,
         };
@@ -210,18 +202,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Refresh slightly ahead of expiry so a user action never fails on an expired token.
       const active = current.expiresAt - 15_000 < Date.now() ? await rotate() : current;
-      if (!active) throw new ApiError('SESSION_EXPIRED', 'Your session has expired. Please sign in again.', 401);
+      if (!active)
+        throw new ApiError(
+          'SESSION_EXPIRED',
+          'Your session has expired. Please sign in again.',
+          401,
+        );
 
       // One key for both attempts: a 401 retry must not create a second logical operation.
       const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
 
       try {
-        return await apiRequestEnvelope<T>(path, { ...options, token: active.accessToken, idempotencyKey });
+        return await apiRequestEnvelope<T>(path, {
+          ...options,
+          token: active.accessToken,
+          idempotencyKey,
+        });
       } catch (error) {
         if (error instanceof ApiError && (error.status === 401 || error.code === 'TOKEN_EXPIRED')) {
           const refreshed = await rotate();
           if (!refreshed) throw error;
-          return apiRequestEnvelope<T>(path, { ...options, token: refreshed.accessToken, idempotencyKey });
+          return apiRequestEnvelope<T>(path, {
+            ...options,
+            token: refreshed.accessToken,
+            idempotencyKey,
+          });
         }
         throw error;
       }

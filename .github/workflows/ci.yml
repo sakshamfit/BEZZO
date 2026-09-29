@@ -42,6 +42,8 @@ jobs:
           npm run test:unit --workspace=@bezzo/api
       - name: Type check web
         run: npm run typecheck --workspace=@bezzo/web
+      - name: Type check API
+        run: npm run typecheck --workspace=@bezzo/api
 
   database-migrations:
     name: PostgreSQL migrations and invariants
@@ -68,6 +70,7 @@ jobs:
       JWT_ACCESS_SECRET: ci-access-secret-not-for-production-123
       JWT_REFRESH_SECRET: ci-refresh-secret-not-for-production-456
       AUTH_OTP_PEPPER: ci-otp-pepper-not-for-production
+      RATE_LIMIT_AUTH_MAX: '1000'
       PAYMENTS_PROVIDER: mock
       LOGISTICS_PROVIDER: manual
     steps:

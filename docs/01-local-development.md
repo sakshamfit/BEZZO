@@ -33,6 +33,12 @@ Rules enforced by the code:
   the secret manager take precedence);
 - `loadConfig()` validates everything at boot and refuses to start on invalid or unsafe values.
 
+Production OTP delivery uses Resend (`EMAIL_PROVIDER_API_KEY`, verified `EMAIL_FROM`) and Twilio
+(`SMS_PROVIDER_ACCOUNT_ID`, Auth Token in `SMS_PROVIDER_API_KEY`, verified `SMS_PROVIDER_FROM`). Set
+`NOTIFICATIONS_ENABLED`, `NOTIFICATIONS_EMAIL_ENABLED`, and `NOTIFICATIONS_SMS_ENABLED` to `true` and
+keep `WORKER_ENABLED=true`; production startup rejects missing delivery configuration. Never use real
+provider credentials in local development or commit them.
+
 ## 3. Database
 
 ```bash

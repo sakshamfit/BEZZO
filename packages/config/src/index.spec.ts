@@ -132,6 +132,65 @@ describe('configuration', () => {
     ).toThrow(/AUTH_OTP_DEV_ECHO/);
   });
 
+  it('requires real email and SMS delivery providers in production', () => {
+    expect(() =>
+      loadConfig({
+        source: {
+          ...baseEnv,
+          NODE_ENV: 'production',
+          DATABASE_SSL: 'true',
+          STORAGE_DRIVER: 's3',
+          PAYMENTS_PROVIDER: 'razorpay',
+          RAZORPAY_KEY_ID: 'key',
+          RAZORPAY_KEY_SECRET: 'secret',
+          RAZORPAY_WEBHOOK_SECRET: 'webhook',
+        },
+      }),
+    ).toThrow(/Production OTP delivery requires email notifications/);
+
+    expect(() =>
+      loadConfig({
+        source: {
+          ...baseEnv,
+          NODE_ENV: 'production',
+          DATABASE_SSL: 'true',
+          STORAGE_DRIVER: 's3',
+          PAYMENTS_PROVIDER: 'razorpay',
+          RAZORPAY_KEY_ID: 'key',
+          RAZORPAY_KEY_SECRET: 'secret',
+          RAZORPAY_WEBHOOK_SECRET: 'webhook',
+          NOTIFICATIONS_EMAIL_ENABLED: 'true',
+          EMAIL_PROVIDER_API_KEY: 'email-key',
+          EMAIL_FROM: 'security@bezzo.in',
+        },
+      }),
+    ).toThrow(/Production OTP delivery requires SMS notifications/);
+
+    const config = loadConfig({
+      source: {
+        ...baseEnv,
+        NODE_ENV: 'production',
+        DATABASE_SSL: 'true',
+        STORAGE_DRIVER: 's3',
+        REDIS_URL: 'redis://cache.internal:6379',
+        REDIS_REQUIRED: 'true',
+        PAYMENTS_PROVIDER: 'razorpay',
+        RAZORPAY_KEY_ID: 'key',
+        RAZORPAY_KEY_SECRET: 'secret',
+        RAZORPAY_WEBHOOK_SECRET: 'webhook',
+        NOTIFICATIONS_EMAIL_ENABLED: 'true',
+        EMAIL_PROVIDER_API_KEY: 'email-key',
+        EMAIL_FROM: 'security@bezzo.in',
+        NOTIFICATIONS_SMS_ENABLED: 'true',
+        SMS_PROVIDER_ACCOUNT_ID: 'TWILIO_TEST_ACCOUNT',
+        SMS_PROVIDER_API_KEY: 'sms-token',
+        SMS_PROVIDER_FROM: '+919876543210',
+      },
+    });
+    expect(config.NODE_ENV).toBe('production');
+    expect(config.WORKER_ENABLED).toBe(true);
+  });
+
   it('degrades gracefully for tooling via tryLoadConfig', () => {
     const { config, warnings } = tryLoadConfig({ source: { NODE_ENV: 'test' } });
     expect(warnings.length).toBeGreaterThan(0);

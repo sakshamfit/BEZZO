@@ -150,7 +150,10 @@ const envSchema = z
     FCM_PROJECT_ID: z.string().optional(),
     FCM_SERVICE_ACCOUNT_JSON: z.string().optional(),
     SMS_PROVIDER_API_KEY: z.string().optional(),
-    EMAIL_SMTP_URL: z.string().optional(),
+    EMAIL_PROVIDER_API_KEY: z.string().optional(),
+    EMAIL_FROM: z.string().email().optional(),
+    SMS_PROVIDER_ACCOUNT_ID: z.string().optional(),
+    SMS_PROVIDER_FROM: z.string().optional(),
     WHATSAPP_API_TOKEN: z.string().optional(),
 
     // ---- Picker operations defaults (runtime overrides live in `configurations`)
@@ -255,6 +258,14 @@ const envSchema = z
             'Local storage driver is not permitted in production — use S3-compatible storage',
         });
       }
+      if (!env.REDIS_URL || !env.REDIS_REQUIRED) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['REDIS_URL'],
+          message:
+            'Production requires REDIS_URL and REDIS_REQUIRED=true for shared rate limits and distributed coordination',
+        });
+      }
       if (env.DATABASE_SSL === false) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -310,6 +321,35 @@ const envSchema = z
             message: `${key} is required for production payments`,
           });
         }
+      }
+      if (
+        !env.NOTIFICATIONS_ENABLED ||
+        !env.WORKER_ENABLED ||
+        !env.NOTIFICATIONS_EMAIL_ENABLED ||
+        !env.EMAIL_PROVIDER_API_KEY ||
+        !env.EMAIL_FROM
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['NOTIFICATIONS_EMAIL_ENABLED'],
+          message:
+            'Production OTP delivery requires email notifications, EMAIL_PROVIDER_API_KEY, and EMAIL_FROM',
+        });
+      }
+      if (
+        !env.NOTIFICATIONS_ENABLED ||
+        !env.WORKER_ENABLED ||
+        !env.NOTIFICATIONS_SMS_ENABLED ||
+        !env.SMS_PROVIDER_API_KEY ||
+        !env.SMS_PROVIDER_ACCOUNT_ID ||
+        !env.SMS_PROVIDER_FROM
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['NOTIFICATIONS_SMS_ENABLED'],
+          message:
+            'Production OTP delivery requires SMS notifications and Twilio account, token, and sender configuration',
+        });
       }
     }
     if (env.SEARCH_ENABLED && !env.OPENSEARCH_NODE) {

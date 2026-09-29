@@ -62,11 +62,42 @@ Toolchain: npm 10.8.2 (`packageManager` pinned at repository root) · turbo 2.x 
 - **IMPLEMENTED, with a migration-history note:** migration 0018 was accidentally recorded from the
   generated TODO scaffold before its SQL reached the compiled migration directory. It is preserved
   unchanged for checksum consistency; the actual lockdown is the forward-only migration 0019.
-- **NOT PRODUCTION READY:** production OTP email/SMS transports are not implemented/configured, the
-  web session token is held in localStorage instead of an HttpOnly cookie, and global/IP rate limiting
-  is absent (`RATE_LIMIT_*` config is not wired). Production requires live payment/storage/search/cache
-  credentials and an API/web/mobile deployment environment. Picker UI/runs, delivery, settlements,
+- **NOT PRODUCTION READY:** production OTP email/SMS transports are implemented (Resend + Twilio) but
+  require provider credentials and verified senders. Web refresh
+  tokens now use an HttpOnly cookie and access tokens stay in memory. API-wide and stricter auth-route
+  per-IP rate limits now use `RATE_LIMIT_TTL_SECONDS`, `RATE_LIMIT_MAX`, and `RATE_LIMIT_AUTH_MAX` through
+  Redis; production configuration now requires shared Redis and marks readiness failed when required
+  Redis is unavailable. The development fallback remains per-instance. Fastify trusts proxy headers, so
+  deployments must expose the API only through a trusted proxy that sanitizes forwarded-IP headers.
+  Production requires live payment, object-storage, Redis, and OTP provider credentials plus API/web/mobile
+  deployment environments. Picker UI/runs, delivery, settlements,
   promotions, remaining operations dashboards, disaster recovery and load testing are still open.
+
+### Production-readiness iteration (2026-09-29)
+
+- **IMPLEMENTED, provider calls not live-verified:** notification workers can send email via Resend and
+  SMS via Twilio. Production startup requires both providers, verified sender configuration, enabled
+  notifications/workers, and shared Redis. Provider credentials have not been supplied, so no real OTP
+  was sent in this work session.
+- **IMPLEMENTED, unit-tested:** API-wide IP rate limits and stricter `/auth/*` limits use Redis counters,
+  hash IPs in cache keys, and return standard 429 responses with `Retry-After`. Health/readiness/metrics,
+  version and preflight routes are exempt. If Redis is required, `/health/ready` returns 503 on outage.
+- **IMPLEMENTED, regression tests added to CI but not run locally:** OTP challenge consumption and refresh
+  token rotation now use conditional transactional writes so concurrent requests cannot create multiple
+  successful sessions. The regression tests require the isolated API/PostgreSQL integration job.
+- **IMPLEMENTED, local checks:** Kubernetes API pods run non-root with read-only root filesystem, dropped
+  capabilities, RuntimeDefault seccomp, and no service-account token. CI now typechecks the API. Mobile
+  buyer cart and order state refresh when the app resumes; lifecycle observer tests pass.
+- **IMPLEMENTED, integration regression test added:** web refresh credentials are issued only as a scoped
+  HttpOnly SameSite cookie, rotated on refresh, and cleared on logout. The browser client keeps only the
+  short-lived access token in memory and removes tokens saved by older builds. API cookie end-to-end
+  coverage is in CI but could not be run locally without an isolated API/database.
+- **IMPLEMENTED, integration regression test added:** `/forgot-password` requests a password-reset OTP
+  and changes the password after verification, clears lockout state, and revokes all active sessions.
+  Password-reset end-to-end coverage is in CI but was not run locally.
+- **NOT CONFIGURED:** no production API image/build-publish workflow, cluster, domain/TLS, ingress/WAF,
+  secrets, alerting, backup/restore rehearsal, or signed mobile release is provisioned. The Kubernetes
+  template still has a sample image/host and needs an operator-managed runtime.
 
 ### Database TLS hardening (2026-09-29)
 
@@ -107,7 +138,7 @@ fulfilled — closes the unpaid order with it (see §5.2).
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | Foundation: workspace, tooling, config, logging, migrations, health/metrics | **IMPLEMENTED** |
-| 2 | Identity & onboarding: auth, sessions, RBAC, buyer/supplier profiles, verification, documents | **PARTIALLY IMPLEMENTED** (signup/sign-in and API-side OTP challenges work; password recovery and production OTP email/SMS transport are **NOT IMPLEMENTED**; push delivery **REQUIRES EXTERNAL CREDENTIALS**) |
+| 2 | Identity & onboarding: auth, sessions, RBAC, buyer/supplier profiles, verification, documents | **PARTIALLY IMPLEMENTED** (signup/sign-in and password recovery use API-side OTP challenges; Resend email and Twilio SMS transports need provider credentials; push delivery **REQUIRES EXTERNAL CREDENTIALS**) |
 | 3 | Catalogue & inventory: products, categories, manufacturers, listings, inventory + ledger | **IMPLEMENTED** |
 | 4 | Marketplace: cart, checkout, orders, payments | Cart + quote + order placement + cancellation + reservation commitment/expiry **IMPLEMENTED** (web `/cart`, `/checkout`, `/orders`, `/orders/[orderId]`); payment capture, webhooks, retry and refunds **IMPLEMENTED** (Phase 6 below) |
 | 5 | Fulfilment: supplier → hub pickup flow (fulfilment records, packing) | Supplier fulfillment list/detail, accept/reject, pack and ready-for-pickup are **IMPLEMENTED** (API, web workspace, integration coverage); picker pickup remains Phase 7 |
@@ -122,7 +153,7 @@ fulfilled — closes the unpaid order with it (see §5.2).
 
 ### 4.1 Database (`packages/database`)
 
-- 17 forward-only migrations (~80 tables) with sha256 drift detection, advisory lock `982451653`,
+- 19 forward-only migrations (90 application tables) with sha256 drift detection, advisory lock `982451653`,
   `-- @transactional: false` support for concurrent index creation.
 - Domains: identity/RBAC, buyers, suppliers, catalog, inventory (+ `inventory_transactions` ledger),
   carts, orders/order_items, fulfillment, pickup (tasks, offers, packages, runs, stops, events),

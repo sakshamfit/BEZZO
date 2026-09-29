@@ -27,7 +27,9 @@ function safeNextPath(candidate: string | null): string | null {
   if (!candidate || !candidate.startsWith('/')) return null;
   try {
     const url = new URL(candidate, 'https://bezzo.invalid');
-    return url.origin === 'https://bezzo.invalid' ? `${url.pathname}${url.search}${url.hash}` : null;
+    return url.origin === 'https://bezzo.invalid'
+      ? `${url.pathname}${url.search}${url.hash}`
+      : null;
   } catch {
     return null;
   }
@@ -68,8 +70,8 @@ function LoginForm() {
       <div className="card">
         <h2>Sign in</h2>
         <p className="muted small">
-          Use the email or mobile number registered with your business. Sessions are validated on every
-          request, so revoking a device takes effect immediately.
+          Use the email or mobile number registered with your business. Sessions are validated on
+          every request, so revoking a device takes effect immediately.
         </p>
 
         {error && (
@@ -104,6 +106,9 @@ function LoginForm() {
               onChange={(event) => setPassword(event.target.value)}
             />
           </div>
+          <div className="small" style={{ textAlign: 'right' }}>
+            <Link href="/forgot-password">Forgot password?</Link>
+          </div>
           <button className="btn primary" type="submit" disabled={submitting}>
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
@@ -118,11 +123,13 @@ function LoginForm() {
         <div className="card">
           <h3>How BEZZO accounts work</h3>
           <ul className="small muted" style={{ paddingLeft: '1.1rem', margin: 0 }}>
-            <li>Retailers and wholesalers register themselves; a Bezzo team verifies the licences.</li>
+            <li>
+              Retailers and wholesalers register themselves; a Bezzo team verifies the licences.
+            </li>
             <li>Picker and hub accounts are provisioned by operations through an invite code.</li>
             <li>
-              Registration activates the account, but ordering scheduled medicines additionally requires a
-              verified drug licence.
+              Registration activates the account, but ordering scheduled medicines additionally
+              requires a verified drug licence.
             </li>
             <li>Suspending a supplier or store stops trading immediately on the next request.</li>
           </ul>
@@ -135,8 +142,8 @@ function LoginForm() {
               <span className="badge warn">dev seed only</span>
             </div>
             <p className="small muted">
-              Seeded for local work. Password <span className="mono">Bezzo@12345</span>. These accounts do
-              not exist in staging or production.
+              Seeded for local work. Password <span className="mono">Bezzo@12345</span>. These
+              accounts do not exist in staging or production.
             </p>
             <div className="pill-row">
               {DEMO_ACCOUNTS.map((account) => (

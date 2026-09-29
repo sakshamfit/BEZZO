@@ -11,6 +11,14 @@ resource thresholds using production load tests. The ingress balances only ready
 is the readiness gate and `/health/live` is the process liveness gate. The deployment does not create
 the database, Redis, search, workers, CDN, WAF, TLS certificate, or object storage.
 
+The API container must include Node.js 22.15 or later, run successfully as UID/GID `10001`, and keep
+its application files readable without writing to the image filesystem. The pod disables service-account
+token mounting and enforces a read-only root filesystem, non-root execution, the runtime-default seccomp
+profile, no privilege escalation, and no Linux capabilities. Production config requires S3-compatible
+object storage; the local filesystem storage driver is rejected in production. If the selected image or
+runtime needs writable temporary files, add a narrowly scoped `emptyDir` mount for that path rather than
+making the container root filesystem writable. The `bezzo-api-secrets` Secret is mandatory.
+
 API JSON/text responses negotiate `zstd`, then Brotli, then gzip. The API requires Node.js 22.15 or later
 for native Zstandard support; ingress/CDN operators should preserve `Accept-Encoding` negotiation and
 `Vary: Accept-Encoding`. Compression at the edge can be enabled for cacheable public content as well.

@@ -86,12 +86,23 @@ config/database/API builds, API typecheck, web Next production build, config (10
 tests, Flutter analyze + 2 catalog tests, full `npm audit` (0 advisories), and npm ci dry-run. The
 GitHub CI has not been remotely run.
 
-Known production blockers, do not claim launch-ready: signup OTP email/SMS providers
-are not implemented/configured; web stores session tokens in localStorage (HttpOnly web session
-hardening remains); global/IP rate limit config is unused; no GitHub branch rules or deployment
-credentials/environment; release signing/API domain absent. Many domain features remain open as listed
+Production-readiness iteration 2026-09-29: Resend email + Twilio SMS transports and OTP password reset
+flow added; web refresh tokens moved from localStorage to HttpOnly cookies; IP rate limits and required-
+Redis readiness added; OTP/refresh rotation races closed; Kubernetes API pod security hardened; API
+typecheck added to CI; Flutter refreshes cart/orders on resume. Latest local verification: API/config
+builds and typechecks, config 12 tests, API 15 unit tests, web typecheck/production build, mobile Dart
+analysis and 2 lifecycle tests. Database-backed regression tests are in CI and were not run locally,
+because the only configured database is hosted production; no production API image or provider credentials
+are available yet.
+
+Production blockers, do not claim launch-ready: Resend/Twilio OTP delivery is implemented but needs
+provider credentials and verified senders; password recovery is now OTP-backed. Web refresh credentials
+use an HttpOnly cookie and the access token stays in memory. API-wide/auth IP rate limits are implemented
+and production requires Redis; health readiness fails when required Redis is down. OTP and refresh token
+consumption use atomic writes. No production image/deploy workflow, cluster, GitHub branch rules, live
+payment/storage credentials, OpenSearch (if enabled), mobile signing or API domain are configured. Many domain features remain open as listed
 in `docs/02-implementation-status.md` (delivery, picker UI/runs, settlements, promotions, broader
-ops/analytics, load/DR). Repo CI is added but has not been run by GitHub yet.
+ops/analytics, load/DR). Repo CI is added but has not been run by GitHub yet. The latest API auth, notification, IP rate-limit, web refresh-cookie, password-reset and mobile lifecycle changes are in the working tree; see the 2026-09-29 production-readiness iteration in `docs/02-implementation-status.md`.
 
 **Branch** `main`. **PR #1** (web app + payments) is merged into `main`.
 History: `781d1a9` (specs uploaded) → `dd0835c` → `6f9a628` → `d38b108` (foundation → identity →
@@ -101,7 +112,7 @@ fix + integration tests + reservation commitment; see the commit body for the hi
 | Phase (§44) | Status |
 | --- | --- |
 | 1 Foundation | IMPLEMENTED |
-| 2 Identity & onboarding | IMPLEMENTED (push delivery REQUIRES EXTERNAL CREDENTIALS) |
+| 2 Identity & onboarding | PARTIALLY IMPLEMENTED (production OTP credentials and push delivery REQUIRES EXTERNAL CREDENTIALS) |
 | 3 Catalogue & inventory | IMPLEMENTED |
 | 4 Marketplace: cart, checkout, orders | IMPLEMENTED |
 | 5 Fulfilment (supplier accept → pack → ready) | IMPLEMENTED (API + supplier workspace + integration coverage) |

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/errors/api_exception.dart';
+import '../../../core/lifecycle/foreground_refresh_observer.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../auth/application/auth_controller.dart';
@@ -51,6 +52,13 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
   String? ordersError;
   int _catalogRequest = 0;
   Timer? _searchDebounce;
+  late final ForegroundRefreshObserver _foregroundRefreshObserver =
+      ForegroundRefreshObserver(
+        onResumed: () {
+          unawaited(widget.store.load());
+          unawaited(_loadOrders());
+        },
+      );
 
   List<Medicine> get visibleProducts => products;
 
@@ -64,6 +72,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
   @override
   void initState() {
     super.initState();
+    _foregroundRefreshObserver.attach();
     unawaited(_loadCatalog());
     unawaited(widget.store.load());
     unawaited(_loadOrders());
@@ -71,6 +80,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
 
   @override
   void dispose() {
+    _foregroundRefreshObserver.dispose();
     _searchDebounce?.cancel();
     super.dispose();
   }

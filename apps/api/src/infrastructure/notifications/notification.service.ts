@@ -27,6 +27,7 @@ export interface NotificationChannelProvider {
   readonly configured: boolean;
   send(input: {
     userId: string;
+    destination?: string | null;
     title: string;
     body: string;
     payload: Record<string, unknown>;
@@ -56,12 +57,19 @@ class LogProvider implements NotificationChannelProvider {
     private readonly logger: BezzoLogger,
   ) {}
 
-  async send(input: { userId: string; title: string; body: string }): Promise<{ providerMessageId: string | null; provider: string }> {
+  async send(input: {
+    userId: string;
+    title: string;
+    body: string;
+  }): Promise<{ providerMessageId: string | null; provider: string }> {
     this.logger.info(
       { channel: this.channel, userId: input.userId, title: input.title, body: input.body },
       'notification transport (log driver)',
     );
-    return { providerMessageId: `log-${crypto.randomUUID()}`, provider: `log-${this.channel.toLowerCase()}` };
+    return {
+      providerMessageId: `log-${crypto.randomUUID()}`,
+      provider: `log-${this.channel.toLowerCase()}`,
+    };
   }
 }
 
@@ -74,12 +82,76 @@ class UnconfiguredProvider implements NotificationChannelProvider {
     private readonly logger: BezzoLogger,
   ) {}
 
-  async send(input: { userId: string }): Promise<{ providerMessageId: string | null; provider: string }> {
+  async send(input: {
+    userId: string;
+  }): Promise<{ providerMessageId: string | null; provider: string }> {
     this.logger.warnWith(
       { channel: this.channel, userId: input.userId },
       `${this.channel} provider is not configured — notification not delivered`,
     );
     throw new Error(`${this.channel} provider is not configured`);
+  }
+}
+
+/** Resend-backed transactional email provider. */
+class ResendEmailProvider implements NotificationChannelProvider {
+  readonly channel = NotificationChannel.EMAIL;
+  readonly configured = true;
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly from: string,
+  ) {}
+
+  async send(input: { destination?: string | null; title: string; body: string }) {
+    if (!input.destination) throw new Error('Email notification has no destination address');
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: this.from,
+        to: [input.destination],
+        subject: input.title,
+        text: input.body,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const result = (await response.json().catch(() => ({}))) as { id?: string; message?: string };
+    if (!response.ok || !result.id)
+      throw new Error(`Email provider returned HTTP ${response.status}`);
+    return { providerMessageId: result.id, provider: 'resend' };
+  }
+}
+
+/** Twilio Messages API SMS provider. */
+class TwilioSmsProvider implements NotificationChannelProvider {
+  readonly channel = NotificationChannel.SMS;
+  readonly configured = true;
+
+  constructor(
+    private readonly accountId: string,
+    private readonly authToken: string,
+    private readonly from: string,
+  ) {}
+
+  async send(input: { destination?: string | null; body: string }) {
+    if (!input.destination) throw new Error('SMS notification has no destination number');
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${this.accountId}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${this.accountId}:${this.authToken}`).toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ From: this.from, To: input.destination, Body: input.body }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    const result = (await response.json().catch(() => ({}))) as { sid?: string };
+    if (!response.ok || !result.sid)
+      throw new Error(`SMS provider returned HTTP ${response.status}`);
+    return { providerMessageId: result.sid, provider: 'twilio' };
   }
 }
 
@@ -108,15 +180,39 @@ export class NotificationService {
   ) {
     this.providers.set(NotificationChannel.IN_APP, new InAppProvider());
 
-    const logTransport = (channel: NotificationChannel, enabled: boolean): NotificationChannelProvider => {
+    const logTransport = (
+      channel: NotificationChannel,
+      enabled: boolean,
+    ): NotificationChannelProvider => {
       if (!enabled) return new UnconfiguredProvider(channel, this.logger);
-      if (this.config.NODE_ENV === 'production') return new UnconfiguredProvider(channel, this.logger);
+      if (this.config.NODE_ENV === 'production')
+        return new UnconfiguredProvider(channel, this.logger);
       return new LogProvider(channel, this.logger);
     };
 
-    this.providers.set(NotificationChannel.PUSH, logTransport(NotificationChannel.PUSH, config.NOTIFICATIONS_PUSH_ENABLED));
-    this.providers.set(NotificationChannel.SMS, logTransport(NotificationChannel.SMS, config.NOTIFICATIONS_SMS_ENABLED));
-    this.providers.set(NotificationChannel.EMAIL, logTransport(NotificationChannel.EMAIL, config.NOTIFICATIONS_EMAIL_ENABLED));
+    this.providers.set(
+      NotificationChannel.PUSH,
+      logTransport(NotificationChannel.PUSH, config.NOTIFICATIONS_PUSH_ENABLED),
+    );
+    this.providers.set(
+      NotificationChannel.SMS,
+      config.NOTIFICATIONS_SMS_ENABLED &&
+        config.SMS_PROVIDER_API_KEY &&
+        config.SMS_PROVIDER_ACCOUNT_ID &&
+        config.SMS_PROVIDER_FROM
+        ? new TwilioSmsProvider(
+            config.SMS_PROVIDER_ACCOUNT_ID,
+            config.SMS_PROVIDER_API_KEY,
+            config.SMS_PROVIDER_FROM,
+          )
+        : logTransport(NotificationChannel.SMS, config.NOTIFICATIONS_SMS_ENABLED),
+    );
+    this.providers.set(
+      NotificationChannel.EMAIL,
+      config.NOTIFICATIONS_EMAIL_ENABLED && config.EMAIL_PROVIDER_API_KEY && config.EMAIL_FROM
+        ? new ResendEmailProvider(config.EMAIL_PROVIDER_API_KEY, config.EMAIL_FROM)
+        : logTransport(NotificationChannel.EMAIL, config.NOTIFICATIONS_EMAIL_ENABLED),
+    );
     this.providers.set(
       NotificationChannel.WHATSAPP,
       logTransport(NotificationChannel.WHATSAPP, config.NOTIFICATIONS_WHATSAPP_ENABLED),
@@ -124,7 +220,9 @@ export class NotificationService {
   }
 
   channelsConfigured(): Record<string, boolean> {
-    return Object.fromEntries([...this.providers.entries()].map(([channel, provider]) => [channel, provider.configured]));
+    return Object.fromEntries(
+      [...this.providers.entries()].map(([channel, provider]) => [channel, provider.configured]),
+    );
   }
 
   /**
@@ -173,9 +271,11 @@ export class NotificationService {
   /** Worker: dispatch due notifications with retry/backoff, then dead-letter. */
   async dispatchDue(limit: number, maxAttempts: number): Promise<{ sent: number; failed: number }> {
     const rows = await this.database.rows<NotificationDispatchRow>(
-      `SELECT n.id, n.user_id, n.type, n.title, n.body, n.channel, n.payload, n.reference_type, n.reference_id,
+      `SELECT n.id, n.user_id, u.email AS destination_email, u.phone AS destination_phone,
+              n.type, n.title, n.body, n.channel, n.payload, n.reference_type, n.reference_id,
               d.id AS delivery_id, COALESCE(d.attempt_count, 0) AS attempt_count
          FROM notifications n
+         JOIN users u ON u.id = n.user_id
          LEFT JOIN notification_deliveries d ON d.notification_id = n.id AND d.channel = n.channel
         WHERE n.status = 'QUEUED' AND n.scheduled_at <= now()
           AND COALESCE(d.status, 'QUEUED') IN ('QUEUED','FAILED')
@@ -197,11 +297,18 @@ export class NotificationService {
       try {
         const result = await provider.send({
           userId: row.user_id,
+          destination:
+            row.channel === NotificationChannel.EMAIL
+              ? row.destination_email
+              : row.destination_phone,
           title: row.title,
           body: row.body,
           payload: row.payload ?? {},
         });
-        await this.database.query(`UPDATE notifications SET status = 'SENT', sent_at = now() WHERE id = $1`, [row.id]);
+        await this.database.query(
+          `UPDATE notifications SET status = 'SENT', sent_at = now() WHERE id = $1`,
+          [row.id],
+        );
         if (row.delivery_id) {
           await this.database.query(
             `UPDATE notification_deliveries
@@ -237,7 +344,10 @@ export class NotificationService {
           );
         }
         // IN_APP notifications are readable regardless; PUSH/SMS failures surface on the ops dashboard.
-        this.metrics.notifications.inc({ channel: row.channel, status: exhausted ? 'dead_letter' : 'failed' });
+        this.metrics.notifications.inc({
+          channel: row.channel,
+          status: exhausted ? 'dead_letter' : 'failed',
+        });
       }
     }
 
@@ -306,6 +416,8 @@ export class NotificationService {
 interface NotificationDispatchRow {
   id: string;
   user_id: string;
+  destination_email: string | null;
+  destination_phone: string | null;
   type: string;
   title: string;
   body: string;

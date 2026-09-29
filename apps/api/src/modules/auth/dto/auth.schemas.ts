@@ -57,7 +57,10 @@ export type RequestOtpInput = z.infer<typeof requestOtpSchema>;
 
 export const verifyOtpSchema = z.object({
   challengeId: z.string().uuid(),
-  code: z.string().trim().regex(/^\d{4,8}$/, 'OTP must be 4-8 digits'),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{4,8}$/, 'OTP must be 4-8 digits'),
   deviceName: z.string().trim().max(120).optional(),
   deviceType: z.enum(['web', 'android', 'ios', 'admin']).optional(),
   deviceId: z.string().trim().max(128).optional(),
@@ -66,11 +69,22 @@ export const verifyOtpSchema = z.object({
 export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
 
 export const refreshSchema = z.object({
-  refreshToken: z.string().min(20).max(512),
+  refreshToken: z.string().min(20).max(512).optional(),
   deviceType: z.enum(['web', 'android', 'ios', 'admin']).optional(),
 });
 
 export type RefreshInput = z.infer<typeof refreshSchema>;
+
+export const resetPasswordSchema = z.object({
+  challengeId: z.string().uuid(),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{4,8}$/),
+  newPassword: z.string().min(8).max(128),
+});
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(128),
@@ -83,7 +97,9 @@ export const updateProfileSchema = z
     email: email.optional(),
     phone: phone.optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, { message: 'At least one field must be provided' });
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided',
+  });
 
 export const logoutSchema = z
   .object({

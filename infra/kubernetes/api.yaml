@@ -22,6 +22,14 @@ spec:
         app.kubernetes.io/name: bezzo-api
         app.kubernetes.io/component: api
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       terminationGracePeriodSeconds: 45
       containers:
         - name: api
@@ -43,6 +51,13 @@ spec:
           envFrom:
             - secretRef:
                 name: bezzo-api-secrets
+                optional: false
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           resources:
             requests:
               cpu: 250m
