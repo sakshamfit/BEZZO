@@ -1,6 +1,6 @@
 # BEZZO — implementation status (living memory)
 
-**Last updated:** 2026-09-28
+**Last updated:** 2026-09-29
 **Branch:** `main`
 **Purpose:** this file is the project's memory. It records *what actually exists in code*, how it was
 verified, what is deliberately absent, and what comes next. It is updated at the end of every work
@@ -25,7 +25,7 @@ BEZZO/
 │   ├── contracts/  framework-free domain vocabulary (enums, events, errors, DTOs, state machines)
 │   ├── config/     zod-validated environment + .env discovery
 │   ├── crypto/     scrypt hashing, token/OTP helpers, constant-time comparison
-│   └── database/   pooled client, migrator, 14 migrations, dev/test seeds
+│   └── database/   pooled client, migrator, 19 migrations, reference/dev/test seeds
 ├── docs/           assessment, local development runbook, this status file
 └── *.md            the specification corpus (source of truth)
 ```
@@ -48,34 +48,42 @@ Toolchain: npm 10.8.2 (`packageManager` pinned at repository root) · turbo 2.x 
   builds, unit tests, ephemeral PostgreSQL migrations/verification, seeded API integration tests, and
   Flutter analysis/tests/debug APK build. GitHub branch protection and deployment credentials are
   outside this repository and are not configured.
-- **BLOCKED:** Supabase pool TCP is reachable, but the database certificate file is still missing;
-  TLS verification fails, so no hosted schema query/migration has passed.
+- **IMPLEMENTED on Supabase (2026-09-29):** verified TLS to the live BEZZO project; all 19 local
+  migrations applied with no pending/drifted migrations; required extensions, tables, constraints and
+  indexes pass `bezzo-db verify`. Production-safe reference data only was seeded (14 roles, 39
+  permissions, 10 dosage forms, 16 categories; no demo users or products).
+- **IMPLEMENTED security correction (2026-09-29):** found Supabase `anon`/`authenticated` could access
+  public-schema tables with RLS disabled. Migration 0019 revokes direct client privileges from BEZZO
+  tables and enables RLS with no client policies; PostgreSQL default privileges for `postgres` also
+  prevent new tables/sequences from being exposed. Final check: all 90 application tables have RLS,
+  none are accessible to `anon`/`authenticated`; the one remaining API-role table is an extension-owned
+  system table. A rolled-back future-table probe confirmed no client grants by default. CI verifier now
+  checks these conditions.
+- **IMPLEMENTED, with a migration-history note:** migration 0018 was accidentally recorded from the
+  generated TODO scaffold before its SQL reached the compiled migration directory. It is preserved
+  unchanged for checksum consistency; the actual lockdown is the forward-only migration 0019.
 - **NOT PRODUCTION READY:** production OTP email/SMS transports are not implemented/configured, the
   web session token is held in localStorage instead of an HttpOnly cookie, and global/IP rate limiting
   is absent (`RATE_LIMIT_*` config is not wired). Production requires live payment/storage/search/cache
   credentials and an API/web/mobile deployment environment. Picker UI/runs, delivery, settlements,
   promotions, remaining operations dashboards, disaster recovery and load testing are still open.
 
-### Database TLS hardening (2026-09-27)
+### Database TLS hardening (2026-09-29)
 
 PostgreSQL pools now verify server certificates whenever TLS is enabled. The new
 `DATABASE_SSL_REJECT_UNAUTHORIZED` setting defaults to `true`; production config rejects `false`.
-The API and database CLI share this behavior. A hosted Supabase URL is in the gitignored root `.env`,
-but no database query or migration has succeeded because the database CA certificate is not installed.
-After saving it to `.secrets/supabase-root.crt` and setting `DATABASE_SSL_CA_CERT_PATH` in `.env`,
-verify connection and migration status, apply migrations, then `db:verify`. Do not run development
-seeds against production.
+The API and database CLI share this behavior. A hosted Supabase URL and the CA path are in the
+gitignored root `.env`; the user-provided CA is stored at `.secrets/supabase-root.crt` (also ignored),
+and PostgreSQL verifies the certificate (`rejectUnauthorized=true`). Do not run development seeds
+against production.
 
-### Supabase connection setup (2026-09-27)
+### Supabase connection setup (2026-09-29)
 
-The Supabase session pooler endpoint is reachable over TCP. PostgreSQL TLS negotiation exposed the
-Supabase CA as untrusted by the workstation, so the pooler handshake fails with certificate
-verification enabled. `DatabaseOptions.sslCaCertPath` and `DATABASE_SSL_CA_CERT_PATH` now allow the
-API and CLI to trust a project CA certificate file without disabling verification. Save the root CA
-downloaded from Supabase Database Settings → SSL Configuration as
-`.secrets/supabase-root.crt` (the `.secrets/` directory is gitignored), set that path in `.env`, then
-retry status/migrations. Config/database/API builds now pass. No database query, migration, or seed
-succeeded yet.
+The project CA now validates the Supabase session pooler. Migrations 0001–0019 have been applied;
+`npm run status --workspace=@bezzo/database` reports 19 applied, 0 pending, no checksum drift, and
+`npm run verify --workspace=@bezzo/database` passes against the hosted database. The production-safe
+reference seed completed; development and test seeds were not run. Never disable certificate checking
+or run `db reset` against this project.
 
 ## 2. Verified running system
 
@@ -83,7 +91,7 @@ succeeded yet.
 | --- | --- | --- | --- |
 | API | `node dist/main.js` (from `apps/api`) | `0.0.0.0:4000` | 71 operations over 55 paths in the live Swagger document (same numbers in the checked-in `openapi/bezzo-api.json`; 12 of them document the required `Idempotency-Key`); `/health` 200; `/docs` 200; `/api/v1/catalog/products` 200 |
 | Web | `npm run dev --workspace=@bezzo/web` | `0.0.0.0:3000` | `/`, `/apply`, `/login`, `/register`, `/catalog`, `/catalog/:id`, `/cart`, `/checkout`, `/orders`, `/orders/:id`, `/account`, `/notifications`, `/status`, `/supplier`, `/supplier/listings`, `/supplier/inventory`, `/admin/applications` all return 200 |
-| Database | embedded PostgreSQL 17.10 (last verified in earlier sandbox, 2026-09-26) | `127.0.0.1:5432` | Historical evidence: `bezzo_local` reset + then-current 14/14 migrations + seed (409 statements) + `verify` PASS. Current repository has 17 migrations; hosted Supabase is not yet verified. |
+| Database | Supabase PostgreSQL 17.6, `ap-northeast-1` | Supabase session pooler, verified TLS | 19/19 migrations, 0 pending, `verify` PASS, production-safe reference seed complete; no demo users/products. |
 | Redis | **not running** (no local binary) | — | documented degraded mode: in-process cache fallback, reported by `/health` |
 | OpenSearch | `SEARCH_ENABLED=false` | — | documented degraded mode: database search path, reported by `/health` |
 

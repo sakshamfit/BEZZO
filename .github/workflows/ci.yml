@@ -79,6 +79,8 @@ jobs:
           node-version: 22.x
           cache: npm
       - run: npm ci
+      - name: Create Supabase client roles in test database
+        run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --command "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;"
       - name: Build database CLI
         run: |
           npm run build --workspace=@bezzo/contracts

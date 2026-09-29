@@ -46,6 +46,14 @@ npm run reset --workspace=@bezzo/database   # destructive: development only
 `DATABASE_URL` selects the environment database
 (`bezzo_local` / `bezzo_test` / `bezzo_staging` / `bezzo_production`). Migration checksums are
 verified on every run — an edited, already-applied migration is refused instead of silently applied.
+For Supabase, keep `DATABASE_SSL=true` and set `DATABASE_SSL_CA_CERT_PATH` to the downloaded project
+CA file (a relative path resolves from the discovered `.env`). Supabase provides the `anon` and
+`authenticated` database roles; a plain PostgreSQL test database must create those two `NOLOGIN` roles
+before applying migration 0019. The CI workflow does this on its isolated database.
+
+Create migrations with `node packages/database/bin/bezzo-db.js create <name>`. This writes to the
+version-controlled `packages/database/migrations/` directory; rebuild `@bezzo/database` before
+running the compiled CLI so it copies source SQL into `dist/migrations/`.
 
 Seeded development sign-ins (development seed only, never production):
 

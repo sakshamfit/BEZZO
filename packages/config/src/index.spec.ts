@@ -1,4 +1,6 @@
 import { loadConfig, tryLoadConfig } from './index';
+import { dirname, resolve } from 'node:path';
+import { resolveEnvFile } from './env-file';
 
 const baseEnv = {
   DATABASE_URL: 'postgresql://localhost:5432/bezzo_test',
@@ -18,16 +20,37 @@ describe('configuration', () => {
     expect(config.RESERVATION_TTL_SECONDS).toBe(900);
   });
 
+  it('resolves a relative database CA path from the discovered env file', () => {
+    const relativePath = '.secrets/supabase-root.crt';
+    const envFile = resolveEnvFile();
+    const config = loadConfig({ source: { ...baseEnv, DATABASE_SSL_CA_CERT_PATH: relativePath } });
+    expect(config.DATABASE_SSL_CA_CERT_PATH).toBe(
+      resolve(dirname(envFile ?? process.cwd()), relativePath),
+    );
+  });
+
   it('rejects a missing database URL', () => {
     expect(() =>
-      loadConfig({ source: { JWT_ACCESS_SECRET: baseEnv.JWT_ACCESS_SECRET, JWT_REFRESH_SECRET: baseEnv.JWT_REFRESH_SECRET, AUTH_OTP_PEPPER: 'x' } }),
+      loadConfig({
+        source: {
+          JWT_ACCESS_SECRET: baseEnv.JWT_ACCESS_SECRET,
+          JWT_REFRESH_SECRET: baseEnv.JWT_REFRESH_SECRET,
+          AUTH_OTP_PEPPER: 'x',
+        },
+      }),
     ).toThrow(/DATABASE_URL/);
   });
 
   it('refuses default JWT secrets in production', () => {
     expect(() =>
       loadConfig({
-        source: { ...baseEnv, NODE_ENV: 'production', JWT_ACCESS_SECRET: 'change-me-access-secret', DATABASE_SSL: 'true', STORAGE_DRIVER: 's3' },
+        source: {
+          ...baseEnv,
+          NODE_ENV: 'production',
+          JWT_ACCESS_SECRET: 'change-me-access-secret',
+          DATABASE_SSL: 'true',
+          STORAGE_DRIVER: 's3',
+        },
       }),
     ).toThrow(/production/i);
   });
@@ -90,7 +113,9 @@ describe('configuration', () => {
   });
 
   it('requires an opensearch node when search is enabled', () => {
-    expect(() => loadConfig({ source: { ...baseEnv, SEARCH_ENABLED: 'true' } })).toThrow(/OPENSEARCH_NODE/);
+    expect(() => loadConfig({ source: { ...baseEnv, SEARCH_ENABLED: 'true' } })).toThrow(
+      /OPENSEARCH_NODE/,
+    );
   });
 
   it('never echoes a dev OTP in production', () => {

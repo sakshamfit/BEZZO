@@ -11,7 +11,7 @@
  *   create <name>                     scaffold the next migration file
  */
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { loadEnvFile } from '@bezzo/config';
 import { Database } from './pool';
 import { createMigrationFile, getStatus, migrateSafely, migrationsDirectory } from './migrator';
@@ -50,7 +50,7 @@ function databaseNameFromUrl(url: string): string {
   }
 }
 
-function createDb(): Database {
+function createDb(sslCaCertPath = process.env.DATABASE_SSL_CA_CERT_PATH): Database {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL is required. Copy .env.example to .env and configure it.');
@@ -61,7 +61,7 @@ function createDb(): Database {
     statementTimeoutMs: Number(process.env.DATABASE_STATEMENT_TIMEOUT_MS ?? 60_000),
     ssl: process.env.DATABASE_SSL === 'true',
     sslRejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false',
-    sslCaCertPath: process.env.DATABASE_SSL_CA_CERT_PATH,
+    sslCaCertPath,
     applicationName: 'bezzo-db-cli',
     logger: {
       debug: () => undefined,
@@ -96,13 +96,22 @@ export async function runCli(argv: string[]): Promise<void> {
   }
   // Being explicit about where configuration came from avoids the classic "which .env is this?" hunt.
   if (flags.verbose === true) {
-    console.log(loaded.path ? `Environment: ${loaded.path}` : 'Environment: process variables only (.env not found)');
+    console.log(
+      loaded.path
+        ? `Environment: ${loaded.path}`
+        : 'Environment: process variables only (.env not found)',
+    );
   }
   if (loaded.errors.length > 0) {
     console.warn(`Ignored ${loaded.errors.length} malformed line(s) in ${loaded.path ?? '.env'}`);
   }
 
-  const db = createDb();
+  const configuredCaPath = process.env.DATABASE_SSL_CA_CERT_PATH;
+  const sslCaCertPath =
+    configuredCaPath && !isAbsolute(configuredCaPath) && loaded.path
+      ? resolve(dirname(loaded.path), configuredCaPath)
+      : configuredCaPath;
+  const db = createDb(sslCaCertPath);
   try {
     switch (command) {
       case 'migrate': {
@@ -112,7 +121,11 @@ export async function runCli(argv: string[]): Promise<void> {
           appliedBy: process.env.USER ?? 'cli',
         });
         if (result.applied.length === 0) {
-          console.log(result.skipped.length > 0 ? `Dry run — would apply: ${result.skipped.join(', ')}` : 'No pending migrations.');
+          console.log(
+            result.skipped.length > 0
+              ? `Dry run — would apply: ${result.skipped.join(', ')}`
+              : 'No pending migrations.',
+          );
         } else {
           console.log(`Applied ${result.applied.length} migration(s) in ${result.durationMs}ms:`);
           for (const file of result.applied) console.log(`  ✔ ${file}`);
@@ -126,7 +139,9 @@ export async function runCli(argv: string[]): Promise<void> {
         console.log(`Applied:  ${status.applied.length}`);
         console.log(`Pending:  ${status.pending.length}`);
         for (const migration of status.applied) {
-          console.log(`  ✔ ${migration.version}_${migration.name} (${migration.executionMs}ms, ${migration.appliedAt})`);
+          console.log(
+            `  ✔ ${migration.version}_${migration.name} (${migration.executionMs}ms, ${migration.appliedAt})`,
+          );
         }
         for (const migration of status.pending) {
           console.log(`  • ${migration.fileName} (pending)`);
@@ -140,9 +155,13 @@ export async function runCli(argv: string[]): Promise<void> {
       }
 
       case 'seed': {
-        const environment = (typeof flags.env === 'string' ? flags.env : 'development') as SeedEnvironment;
+        const environment = (
+          typeof flags.env === 'string' ? flags.env : 'development'
+        ) as SeedEnvironment;
         const result = await runSeeds(db, environment);
-        console.log(`Seeded "${result.environment}" (${result.statements} statements, ${result.durationMs}ms)`);
+        console.log(
+          `Seeded "${result.environment}" (${result.statements} statements, ${result.durationMs}ms)`,
+        );
         break;
       }
 
@@ -170,7 +189,10 @@ export async function runCli(argv: string[]): Promise<void> {
 
       case 'create': {
         const name = process.argv[3];
-        if (!name) throw new Error('create requires a migration name, e.g. `bezzo-db create add_order_snapshots`');
+        if (!name)
+          throw new Error(
+            'create requires a migration name, e.g. `bezzo-db create add_order_snapshots`',
+          );
         const fileName = await createMigrationFile(name);
         console.log(`Created ${fileName}`);
         break;
@@ -269,7 +291,11 @@ export async function verifyDatabase(db: Database): Promise<string[]> {
   const criticalConstraints: Array<{ table: string; name: string; kind: string }> = [
     { table: 'inventories', name: 'inventories_reserved_within_available', kind: 'c' },
     { table: 'inventories', name: 'inventories_listing_unique', kind: 'i' },
-    { table: 'inventory_reservations', name: 'inventory_reservations_order_item_active_unique', kind: 'i' },
+    {
+      table: 'inventory_reservations',
+      name: 'inventory_reservations_order_item_active_unique',
+      kind: 'i',
+    },
     { table: 'pickup_task_orders', name: 'pickup_task_orders_active_unique', kind: 'i' },
     { table: 'hub_package_scans', name: 'hub_package_scans_accepted_unique', kind: 'i' },
     { table: 'pickup_offers', name: 'pickup_offers_pending_unique', kind: 'i' },
@@ -300,7 +326,11 @@ export async function verifyDatabase(db: Database): Promise<string[]> {
   const functions = await db.rows<{ proname: string }>(
     `SELECT proname FROM pg_proc WHERE proname IN ('bezzo_next_order_number','bezzo_next_pickup_task_code','bezzo_haversine_km','bezzo_touch_updated_at')`,
   );
-  for (const required of ['bezzo_next_order_number', 'bezzo_next_pickup_task_code', 'bezzo_haversine_km']) {
+  for (const required of [
+    'bezzo_next_order_number',
+    'bezzo_next_pickup_task_code',
+    'bezzo_haversine_km',
+  ]) {
     if (!functions.some((row) => row.proname === required)) {
       failures.push(`Required function is missing: ${required}()`);
     }

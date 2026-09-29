@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-28** (production readiness review; see §2).
+Last updated: **2026-09-29** (Supabase bootstrap/security lockdown and logo concept checkpoint; see §2).
 
 ---
 
@@ -42,18 +42,35 @@ working source of truth for the visual language.
 
 **Database TLS hardening (2026-09-27):** API and database CLI `pg` pools now verify the server
 certificate by default when `DATABASE_SSL=true`. `DATABASE_SSL_REJECT_UNAUTHORIZED` defaults to true,
-and production configuration rejects false. Config, database, and API TypeScript builds completed.
-The user configured their Supabase session pooler fields and supplied the database password. Root
-`.env` has been created (gitignored) with the percent-encoded connection string and SSL enabled; never
-print or commit it. TCP to the Supabase pooler succeeded, but PostgreSQL TLS verification fails with
-`SELF_SIGNED_CERT_IN_CHAIN`. Supabase's documented solution is to download the CA from Database
-Settings → SSL Configuration. Pool options now support `sslCaCertPath`; API and DB CLI read
-`DATABASE_SSL_CA_CERT_PATH`. User must save their CA file to `.secrets/supabase-root.crt`, then set
-`DATABASE_SSL_CA_CERT_PATH=.secrets/supabase-root.crt` in root `.env`. `.secrets/` is gitignored.
-No DB query or migration succeeded. Never turn off cert verification; do not run dev seeds or reset
-against this production DB. The first API build attempt hit OneDrive `EPERM` cleaning a dist directory;
-later API/database/config builds and API typecheck passed. Database connection is blocked on the
-Supabase CA certificate.
+and production configuration rejects false. The CA downloaded by the user is stored at ignored
+`.secrets/supabase-root.crt`; root `.env` points to it and enables SSL. The verified TLS connection
+succeeds. Never turn off certificate verification; do not run development seeds or reset against this
+production DB.
+
+**Supabase production bootstrap (2026-09-29):** project `yykezzllmindqqjbluct` is active in
+`ap-northeast-1`. All 17 original migrations applied. Production-safe reference seed ran (274 SQL
+statements): 14 roles, 39 permissions, 10 dosage forms, 16 categories, zero users, zero products.
+`bezzo-db verify` passed. A direct privilege audit then found `anon`/`authenticated` privileges and no
+RLS on the app tables. Migration 0018 was accidentally recorded from the DB CLI's generated TODO
+scaffold because that CLI reads `dist/migrations`, while its source copy was edited instead; preserve
+0018 unchanged for checksum consistency. Corrective migration
+`0019_supabase_data_api_rls_lockdown.sql` was built into dist and applied. It revokes client table and
+sequence access, enables RLS on all 90 application tables with no client policies, and restricts
+postgres default privileges. A read-only audit confirmed 90/90 app tables have RLS and zero app tables
+are accessible to `anon`/`authenticated`; the one open public relation is extension-owned
+`spatial_ref_sys` metadata. A rolled-back table-creation probe confirmed future tables get no client
+grants. `npm run verify --workspace=@bezzo/database` now checks RLS and direct role access and passed
+against Supabase. `npm run status --workspace=@bezzo/database`: 19 applied, 0 pending, no drift. The
+database workspace has no Jest tests configured (“No tests found”); build, hosted verifier and security
+SQL probes passed. CI creates matching client roles in its plain PostgreSQL service. CLI CA paths now
+resolve relative to root `.env`, and migration scaffolding writes to source `migrations/`; both fixes
+were smoke-checked.
+
+**Logo design checkpoint (2026-09-29):** installed the user-requested
+`kaankiziltug/logo-design-skill` into `~/.codex/skills/logo-design`. First-round brief, 9-concept
+scorecard, three monochrome concepts, vector lockups and overview are in `docs/brand/bezzo/`. Wait for
+the user's direction before building a full kit or treating these concepts as the final identity.
+Recommendation: Split B. Preview: `docs/brand/bezzo/bezzo-concepts.png`.
 
 **Production review (2026-09-28):** `.github/workflows/ci.yml` now defines Node 22.x CI with Node 24
 compatible Actions releases for npm audit,
@@ -69,8 +86,7 @@ config/database/API builds, API typecheck, web Next production build, config (10
 tests, Flutter analyze + 2 catalog tests, full `npm audit` (0 advisories), and npm ci dry-run. The
 GitHub CI has not been remotely run.
 
-Known production blockers, do not claim launch-ready: Supabase database CA file absent
-(`.secrets/supabase-root.crt`); no successful hosted DB query/migration; signup OTP email/SMS providers
+Known production blockers, do not claim launch-ready: signup OTP email/SMS providers
 are not implemented/configured; web stores session tokens in localStorage (HttpOnly web session
 hardening remains); global/IP rate limit config is unused; no GitHub branch rules or deployment
 credentials/environment; release signing/API domain absent. Many domain features remain open as listed

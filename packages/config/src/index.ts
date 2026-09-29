@@ -7,11 +7,20 @@
  *   2. secrets never appear in source (spec §39);
  *   3. behaviour is environment-specific but code is not.
  */
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
+import { resolveEnvFile } from './env-file';
+
+function resolveDatabaseCaPath(value?: string): string | undefined {
+  if (!value || isAbsolute(value)) return value;
+  return resolve(dirname(resolveEnvFile() ?? process.cwd()), value);
+}
 
 const booleanish = z
   .union([z.boolean(), z.string()])
-  .transform((value) => (typeof value === 'boolean' ? value : ['1', 'true', 'yes', 'on'].includes(value.toLowerCase())));
+  .transform((value) =>
+    typeof value === 'boolean' ? value : ['1', 'true', 'yes', 'on'].includes(value.toLowerCase()),
+  );
 
 const integerish = (defaultValue: number) =>
   z
@@ -20,7 +29,10 @@ const integerish = (defaultValue: number) =>
     .transform((value, ctx) => {
       const parsed = typeof value === 'number' ? value : Number.parseInt(value, 10);
       if (Number.isNaN(parsed)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Expected an integer, received "${value}"` });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Expected an integer, received "${value}"`,
+        });
         return z.NEVER;
       }
       return parsed;
@@ -51,7 +63,12 @@ const envSchema = z
     CORS_ALLOWED_ORIGINS: z
       .string()
       .default('http://localhost:3000')
-      .transform((value) => value.split(',').map((origin) => origin.trim()).filter(Boolean)),
+      .transform((value) =>
+        value
+          .split(',')
+          .map((origin) => origin.trim())
+          .filter(Boolean),
+      ),
 
     // ---- Database
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — PostgreSQL is the source of truth'),
@@ -60,7 +77,7 @@ const envSchema = z
     DATABASE_STATEMENT_TIMEOUT_MS: integerish(15_000),
     DATABASE_SSL: booleanish.default(false),
     DATABASE_SSL_REJECT_UNAUTHORIZED: booleanish.default(true),
-    DATABASE_SSL_CA_CERT_PATH: z.string().optional(),
+    DATABASE_SSL_CA_CERT_PATH: z.string().optional().transform(resolveDatabaseCaPath),
     DATABASE_APPLICATION_NAME: z.string().default('bezzo'),
 
     // ---- Redis (cache/geo only; PostgreSQL stays authoritative)
@@ -153,7 +170,10 @@ const envSchema = z
      */
     APPLICATIONS_WHATSAPP_NUMBER: z
       .string()
-      .regex(/^[1-9]\d{7,14}$/, 'Use the international format without punctuation, e.g. 918604683669')
+      .regex(
+        /^[1-9]\d{7,14}$/,
+        'Use the international format without punctuation, e.g. 918604683669',
+      )
       .default('918604683669'),
     APPLICATIONS_WHATSAPP_DISPLAY: z.string().default('+91 86046 83669'),
 
@@ -203,7 +223,8 @@ const envSchema = z
       for (const origin of env.CORS_ALLOWED_ORIGINS) {
         try {
           const parsed = new URL(origin);
-          if (parsed.protocol !== 'https:' || parsed.origin !== origin) throw new Error('invalid origin');
+          if (parsed.protocol !== 'https:' || parsed.origin !== origin)
+            throw new Error('invalid origin');
         } catch {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -230,7 +251,8 @@ const envSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['STORAGE_DRIVER'],
-          message: 'Local storage driver is not permitted in production — use S3-compatible storage',
+          message:
+            'Local storage driver is not permitted in production — use S3-compatible storage',
         });
       }
       if (env.DATABASE_SSL === false) {
@@ -272,10 +294,15 @@ const envSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['PAYMENTS_PROVIDER'],
-          message: 'Production requires the implemented live Razorpay provider; mock and unimplemented providers are not allowed',
+          message:
+            'Production requires the implemented live Razorpay provider; mock and unimplemented providers are not allowed',
         });
       }
-      for (const key of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET'] as const) {
+      for (const key of [
+        'RAZORPAY_KEY_ID',
+        'RAZORPAY_KEY_SECRET',
+        'RAZORPAY_WEBHOOK_SECRET',
+      ] as const) {
         if (!env[key]) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -368,9 +395,13 @@ export const isDevelopment = (config: AppConfig): boolean =>
   config.NODE_ENV === 'development' || config.NODE_ENV === 'test';
 
 /** Convenience helper used by scripts that need only the database URL. */
-export function requireDatabaseUrl(source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): string {
+export function requireDatabaseUrl(
+  source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string {
   if (!source.DATABASE_URL) {
-    throw new Error('DATABASE_URL is required (see .env.example). PostgreSQL is the source of truth.');
+    throw new Error(
+      'DATABASE_URL is required (see .env.example). PostgreSQL is the source of truth.',
+    );
   }
   return source.DATABASE_URL;
 }

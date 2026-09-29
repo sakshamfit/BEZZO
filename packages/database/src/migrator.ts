@@ -72,17 +72,36 @@ export function migrationsDirectory(): string {
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
-  throw new Error(`Unable to locate the migrations directory (looked in: ${candidates.join(', ')})`);
+  throw new Error(
+    `Unable to locate the migrations directory (looked in: ${candidates.join(', ')})`,
+  );
 }
 
-export async function loadMigrationFiles(directory = migrationsDirectory()): Promise<MigrationFile[]> {
+/** Source migrations are version controlled; dist is only the compiled runtime copy. */
+export function sourceMigrationsDirectory(): string {
+  const candidates = [
+    join(__dirname, '..', 'migrations'),
+    join(process.cwd(), 'migrations'),
+    join(process.cwd(), 'packages', 'database', 'migrations'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(`Unable to locate source migrations (looked in: ${candidates.join(', ')})`);
+}
+
+export async function loadMigrationFiles(
+  directory = migrationsDirectory(),
+): Promise<MigrationFile[]> {
   const entries = (await readdir(directory)).filter((file) => file.endsWith('.sql')).sort();
   const files: MigrationFile[] = [];
   for (const fileName of entries) {
     const sql = await readFile(join(directory, fileName), 'utf8');
     const match = /^(\d{4})_([a-z0-9_]+)\.sql$/i.exec(fileName);
     if (!match) {
-      throw new Error(`Migration "${fileName}" does not follow the NNNN_lower_snake_case.sql convention`);
+      throw new Error(
+        `Migration "${fileName}" does not follow the NNNN_lower_snake_case.sql convention`,
+      );
     }
     files.push({
       version: match[1] as string,
@@ -97,7 +116,9 @@ export async function loadMigrationFiles(directory = migrationsDirectory()): Pro
     .map((file) => file.version)
     .filter((version, index, all) => all.indexOf(version) !== index);
   if (duplicates.length > 0) {
-    throw new Error(`Duplicate migration versions detected: ${[...new Set(duplicates)].join(', ')}`);
+    throw new Error(
+      `Duplicate migration versions detected: ${[...new Set(duplicates)].join(', ')}`,
+    );
   }
   return files;
 }
@@ -115,7 +136,9 @@ export async function getAppliedMigrations(db: Database): Promise<AppliedMigrati
     applied_at: Date;
     execution_ms: number;
     applied_by: string | null;
-  }>('SELECT version, name, checksum, applied_at, execution_ms, applied_by FROM schema_migrations ORDER BY version');
+  }>(
+    'SELECT version, name, checksum, applied_at, execution_ms, applied_by FROM schema_migrations ORDER BY version',
+  );
   return rows.map((row) => ({
     version: row.version,
     name: row.name,
@@ -126,8 +149,14 @@ export async function getAppliedMigrations(db: Database): Promise<AppliedMigrati
   }));
 }
 
-export async function getStatus(db: Database, options: { directory?: string } = {}): Promise<MigrationStatus> {
-  const [files, applied] = await Promise.all([loadMigrationFiles(options.directory), getAppliedMigrations(db)]);
+export async function getStatus(
+  db: Database,
+  options: { directory?: string } = {},
+): Promise<MigrationStatus> {
+  const [files, applied] = await Promise.all([
+    loadMigrationFiles(options.directory),
+    getAppliedMigrations(db),
+  ]);
   const appliedVersions = new Set(applied.map((migration) => migration.version));
   const pending = files.filter((file) => !appliedVersions.has(file.version));
   const drift = applied
@@ -154,7 +183,10 @@ export interface MigrateOptions {
   appliedBy?: string;
 }
 
-export async function migrate(db: Database, options: MigrateOptions = {}): Promise<MigrationResult> {
+export async function migrate(
+  db: Database,
+  options: MigrateOptions = {},
+): Promise<MigrationResult> {
   const startedAt = Date.now();
   await ensureMigrationsTable(db);
   const files = await loadMigrationFiles(options.directory);
@@ -177,7 +209,11 @@ export async function migrate(db: Database, options: MigrateOptions = {}): Promi
   );
 
   if (options.dryRun) {
-    return { applied: [], skipped: candidates.map((file) => file.fileName), durationMs: Date.now() - startedAt };
+    return {
+      applied: [],
+      skipped: candidates.map((file) => file.fileName),
+      durationMs: Date.now() - startedAt,
+    };
   }
 
   const executed: string[] = [];
@@ -189,7 +225,13 @@ export async function migrate(db: Database, options: MigrateOptions = {}): Promi
         await client.query(
           `INSERT INTO schema_migrations (version, name, checksum, execution_ms, applied_by)
            VALUES ($1, $2, $3, $4, $5)`,
-          [file.version, file.name, file.checksum, Date.now() - migrationStartedAt, options.appliedBy ?? null],
+          [
+            file.version,
+            file.name,
+            file.checksum,
+            Date.now() - migrationStartedAt,
+            options.appliedBy ?? null,
+          ],
         );
       });
     } else {
@@ -200,7 +242,13 @@ export async function migrate(db: Database, options: MigrateOptions = {}): Promi
       await db.query(
         `INSERT INTO schema_migrations (version, name, checksum, execution_ms, applied_by)
          VALUES ($1, $2, $3, $4, $5)`,
-        [file.version, file.name, file.checksum, Date.now() - migrationStartedAt, options.appliedBy ?? null],
+        [
+          file.version,
+          file.name,
+          file.checksum,
+          Date.now() - migrationStartedAt,
+          options.appliedBy ?? null,
+        ],
       );
     }
     executed.push(file.fileName);
@@ -212,7 +260,10 @@ export async function migrate(db: Database, options: MigrateOptions = {}): Promi
 /**
  * Apply pending migrations under an advisory lock so concurrent deployments cannot interleave.
  */
-export async function migrateSafely(db: Database, options: MigrateOptions = {}): Promise<MigrationResult> {
+export async function migrateSafely(
+  db: Database,
+  options: MigrateOptions = {},
+): Promise<MigrationResult> {
   return db.withAdvisoryLock(MIGRATION_ADVISORY_LOCK_KEY, () => migrate(db, options));
 }
 
@@ -266,7 +317,10 @@ export function splitStatements(sql: string): string[] {
 }
 
 /** Scaffold a new migration file with the next sequential version. */
-export async function createMigrationFile(name: string, directory = migrationsDirectory()): Promise<string> {
+export async function createMigrationFile(
+  name: string,
+  directory = sourceMigrationsDirectory(),
+): Promise<string> {
   const { writeFile } = await import('node:fs/promises');
   const files = await loadMigrationFiles(directory);
   const lastVersion = files.at(-1)?.version ?? '0000';
