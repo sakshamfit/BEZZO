@@ -21,6 +21,21 @@ For an Android Play release, build an app bundle and provide the upload-key valu
 `BEZZO_UPLOAD_KEY_PASSWORD` environment variables. Release builds fail when signing values are
 missing; never commit the keystore or those values.
 
+### Offline showcase build
+
+For presentations without a deployed API or live credentials, build the isolated demo path:
+
+```powershell
+flutter build apk --debug --split-per-abi --dart-define=BEZZO_DEMO_MODE=true
+```
+
+Install `build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk` on a 64-bit Android device. This
+mode uses local in-memory sample data only: demo buyer sign-in, sealed-box catalog, basket, simulated
+COD checkout, and sample order history. It never calls the BEZZO API, Supabase, email/SMS, or a payment
+provider. Orders reset when the app process/data is cleared. The banner labels the experience as a
+demo; sample medicines/prices are not real offers. CI uploads this arm64 showcase APK as
+`bezzo-android-showcase-apks` when the Flutter job succeeds.
+
 ## Structure
 
 `lib/` keeps startup and app configuration separate from feature code:

@@ -23,8 +23,42 @@ Status vocabulary (as required by the brief):
 - **BLOCKED LOCALLY:** Flutter's dependency refresh cannot delete an ignored iOS plugin reparse point
   in the OneDrive checkout. `flutter build apk --debug --no-pub` reached Gradle, which failed with
   `Unable to establish loopback connection`. Do not remove the ignored iOS directory as a workaround.
-- **IN PROGRESS REMOTELY:** GitHub Actions run #4 for commit `174bccf` was visible and still running
-  when checked. Logs are not available from the public page while it runs; `gh` is not installed here.
+- **HISTORICAL CHECKPOINT:** GitHub Actions run #4 for commit `174bccf` was still running when first
+  checked. Its later replacement on current `main` is recorded in the launch-readiness audit below.
+
+### Launch-readiness audit (2026-09-30)
+
+- **NOT PRODUCTION READY.** The latest public GitHub Actions run for `main` commit `497c49f` passed
+  Web/API/package checks and the Flutter analyze/test/debug-APK job, but failed the PostgreSQL-backed
+  authenticated API integration step. The public run shows exit code 1; its logs require repository
+  access and were not available to this audit. The run produced a 74.6 MB **debug** APK artifact, not
+  a signed release.
+- **IMPLEMENTED / DATABASE VERIFIED READ-ONLY:** the configured Supabase database responds over
+  verified TLS and reports 19 migrations applied, zero pending and no checksum drift. No production
+  migrations, seeds or integration mutations were run for this audit.
+- **BLOCKED: local API startup and real sign-in/email.** The local `.env` lacks JWT access/refresh
+  secrets and the OTP pepper, so fail-fast config validation prevents the API from booting. Resend and
+  Twilio credentials/senders are absent; the OTP transports are code-complete but real email/SMS
+  delivery, signup verification and password recovery were not live-verified.
+- **BLOCKED: signed mobile release.** No production HTTPS BEZZO API URL or Android upload keystore
+  configuration is present. The workstation has Node 20.19 (below the required 22.15), and no Java or
+  Docker executable. Flutter 3.44.6 analysis passed locally; current commit's Flutter CI tests and
+  debug build passed remotely.
+- **REQUIRES IMPLEMENTATION / CONFIGURATION:** shared Redis, production Razorpay and webhook secrets,
+  object storage, exact HTTPS CORS origins, FCM credentials if push is enabled, production deployment
+  image/host/TLS/WAF, alerting and restore rehearsal. Delivery, picker runs/UI, settlements, disputes,
+  promotions, broader operations/analytics, and online payment handoff in Flutter remain incomplete;
+  see the phase and gap tables below.
+- Do not describe BEZZO as launch-ready or build a production APK until the integration failure is
+  diagnosed, missing production configuration and deployment are supplied, and outstanding launch
+  scope is either implemented or explicitly excluded by the product owner.
+- **SHOWCASE MODE IMPLEMENTED (2026-09-30):** `apps/mobile` has an opt-in `BEZZO_DEMO_MODE=true`
+  entry point with demo buyer access, sealed-box sample catalog, local basket, simulated COD order,
+  and sample order history. The path does not construct API/Supabase/session services; all state is
+  in-memory and resets when the app restarts. Flutter analysis passes and all 7 tests pass. Local
+  Android packaging is blocked before Gradle compilation because Java cannot establish its Windows
+  loopback selector pipe (reproduced with a standalone Java selector probe). CI is updated to produce
+  and upload an arm64 demo debug APK; this workflow change still needs its GitHub run verified.
 
 ### Stitch visual system adaptation (2026-09-30)
 

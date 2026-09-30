@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-30** (mobile notification inbox, APK artifact, and local build checkpoint; see §2).
+Last updated: **2026-09-30** (launch-readiness audit and Apper build checkpoint; see §2).
 
 ---
 
@@ -115,6 +115,35 @@ iOS directory as a workaround without first preserving its contents. GitHub Acti
 `174bccf` was visible and still in progress; public logs were not available while it ran. Production mobile build still needs upload
 keystore/signing values and Play Console access. Production deployment still needs hosting, Redis,
 object storage, verified email/SMS senders, and provider credentials appropriate to enabled features.
+
+**Launch-readiness audit (2026-09-30): NOT PRODUCTION READY.** Current `main` / `origin/main` is
+`497c49f`. Public GitHub Actions run `36682154309` passed the Web/API/package and Flutter jobs, but the
+PostgreSQL-backed authenticated API integration job failed with exit code 1; public job logs require
+repository access, so the failure cause remains unknown. Flutter CI did pass analysis, tests, and a
+debug APK build; the uploaded artifact is 74.6 MB and is not signed for release. Read-only Supabase
+status reports 19 migrations applied, none pending and no drift. The local `.env` does not contain
+JWT access/refresh secrets or the OTP pepper, so local API startup fails validation; Resend/Twilio
+credentials are absent and no real OTP email/SMS was verified. The workstation's Node is 20.19
+(requirement ≥22.15); Java and Docker are unavailable. No production API URL or Android signing values
+are configured. Redis, payments, object storage, deployment/observability/DR, and domain features still
+listed as gaps in `docs/02-implementation-status.md` prevent a launch claim. Do not start a production
+APK build until these gates are closed. Do not run migrations, seeds, or integration tests against the
+hosted production database.
+
+**Apper checkpoint (2026-09-30):** Codex MCP config includes `apper` but is not authenticated; an OAuth
+login flow was opened and awaits the user signing in and authorizing. The draft prompt is
+`docs/APPER_BUILD_BRIEF.md`. Do not use Apper's irreversible `connect_database` operation against the
+production Supabase project without explicit review and approval of its target/schema/RLS changes.
+
+**Offline showcase mode (2026-09-30):** `apps/mobile` now supports opt-in
+`--dart-define=BEZZO_DEMO_MODE=true`, separate from the default API-backed app. The demo path has a
+no-password demo buyer entry, four sealed-box sample products, working in-memory basket, simulated
+COD checkout, and order list/detail. It constructs no API client, Supabase connection or secure
+session. All 7 mobile tests pass and Dart analysis is clean. Local packaging fails before project
+compilation because Windows Java `Selector.open()` cannot establish its loopback pipe (reproduced by
+minimal Java probe, so Gradle options and JDK 17 vs Android Studio JBR do not resolve it). CI was
+updated to build/upload `app-arm64-v8a-debug.apk` with demo mode; push/run it and retrieve the artifact
+to deliver. It is a showcase debug APK, never a Play Store signed release or real commerce system.
 
 **Stitch visual system (2026-09-30):** adapted the supplied Blinkit-clone reference to BEZZO's B2B
 medicine workflow. Flutter shared tokens now use electric blue, pale cool-blue/white surfaces, slate
