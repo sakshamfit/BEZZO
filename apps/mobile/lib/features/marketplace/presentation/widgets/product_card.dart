@@ -19,7 +19,14 @@ class ProductCard extends StatelessWidget {
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: const Color(0xFFE9EDF0)),
+      border: Border.all(color: borderSubtle),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0A0F172A),
+          blurRadius: 8,
+          offset: Offset(0, 2),
+        ),
+      ],
     ),
     clipBehavior: Clip.antiAlias,
     child: Column(
@@ -41,7 +48,7 @@ class ProductCard extends StatelessWidget {
                   'SEALED BOX',
                   style: TextStyle(
                     fontSize: 8,
-                    color: navy,
+                    color: brandBlue,
                     fontWeight: FontWeight.w900,
                     letterSpacing: .4,
                   ),
@@ -60,7 +67,7 @@ class ProductCard extends StatelessWidget {
                 child: const Icon(
                   Icons.verified_rounded,
                   size: 15,
-                  color: teal,
+                  color: brandBlue,
                 ),
               ),
             ),
@@ -74,8 +81,8 @@ class ProductCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: ink,
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
             ),
           ),
         ),
@@ -85,7 +92,7 @@ class ProductCard extends StatelessWidget {
             product.strength,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: muted, fontSize: 10),
+            style: const TextStyle(color: muted, fontSize: 12),
           ),
         ),
         Padding(
@@ -94,7 +101,7 @@ class ProductCard extends StatelessWidget {
             product.supplier,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: muted, fontSize: 10),
+            style: const TextStyle(color: muted, fontSize: 11),
           ),
         ),
         Padding(
@@ -103,7 +110,7 @@ class ProductCard extends StatelessWidget {
             '${product.supplierCount} offers · ${product.stockBoxes} boxes available',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: muted, fontSize: 8),
+            style: const TextStyle(color: muted, fontSize: 10),
           ),
         ),
         Padding(
@@ -115,7 +122,7 @@ class ProductCard extends StatelessWidget {
                     ? 'From ${money(product.price)} / box'
                     : 'Price on offer',
                 style: const TextStyle(
-                  color: navy,
+                  color: brandBlue,
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
                 ),
@@ -128,18 +135,22 @@ class ProductCard extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 5, 10, 10),
           child: SizedBox(
-            height: 36,
+            height: 40,
             width: double.infinity,
-            child: FilledButton.tonal(
+            child: OutlinedButton(
               onPressed: () => onViewOffers(product),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFE8F5F1),
-                foregroundColor: navy,
+              style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: brandBlue,
                 padding: EdgeInsets.zero,
+                side: const BorderSide(color: borderSubtle),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: const Text(
-                'VIEW WHOLESALE OFFERS',
-                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900),
+                'Compare wholesale offers',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
               ),
             ),
           ),

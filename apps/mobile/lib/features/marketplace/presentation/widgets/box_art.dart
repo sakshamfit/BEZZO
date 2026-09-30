@@ -12,7 +12,7 @@ class BoxArt extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     height: compact ? 64 : 132,
     width: double.infinity,
-    color: Color(product.tint),
+    color: surfaceBlue,
     child: Stack(
       alignment: Alignment.center,
       children: [
@@ -36,7 +36,7 @@ class BoxArt extends StatelessWidget {
             borderRadius: BorderRadius.circular(5),
             boxShadow: [
               BoxShadow(
-                color: navy.withValues(alpha: .16),
+                color: brandBlue.withValues(alpha: .16),
                 blurRadius: 15,
                 offset: const Offset(0, 8),
               ),
@@ -48,7 +48,7 @@ class BoxArt extends StatelessWidget {
               Container(
                 height: compact ? 6 : 12,
                 decoration: const BoxDecoration(
-                  color: navy,
+                  color: brandBlue,
                   borderRadius: BorderRadius.vertical(top: Radius.circular(5)),
                 ),
                 child: Center(
@@ -71,7 +71,7 @@ class BoxArt extends StatelessWidget {
                   maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: navy,
+                    color: brandBlue,
                     fontSize: compact ? 4 : 9,
                     height: 1.1,
                     fontWeight: FontWeight.w900,
@@ -91,7 +91,7 @@ class BoxArt extends StatelessWidget {
                   ),
                 ),
               const Spacer(),
-              Container(height: compact ? 3 : 6, color: teal),
+              Container(height: compact ? 3 : 6, color: electricBlue),
             ],
           ),
         ),
@@ -101,7 +101,7 @@ class BoxArt extends StatelessWidget {
             right: 12,
             child: Icon(
               Icons.inventory_2_rounded,
-              color: navy.withValues(alpha: .14),
+              color: brandBlue.withValues(alpha: .14),
               size: 24,
             ),
           ),

@@ -205,7 +205,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
-          icon: const Icon(Icons.check_circle_rounded, color: teal, size: 48),
+          icon: const Icon(
+            Icons.check_circle_rounded,
+            color: successGreen,
+            size: 48,
+          ),
           title: const Text('Order placed'),
           content: Text(
             '$number is confirmed. Payment method: cash on delivery.',
@@ -230,7 +234,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: const Text('Delivery & payment'),
-      backgroundColor: brandYellow,
+      backgroundColor: Colors.white,
     ),
     body: _loading
         ? const Center(child: CircularProgressIndicator())
@@ -364,10 +368,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
               const Card(
                 color: Colors.white,
                 child: ListTile(
-                  leading: Icon(Icons.payments_outlined, color: teal),
+                  leading: Icon(Icons.payments_outlined, color: brandBlue),
                   title: Text('Cash on delivery'),
                   subtitle: Text('Pay your supplier when your order arrives.'),
-                  trailing: Icon(Icons.check_circle_rounded, color: teal),
+                  trailing: Icon(
+                    Icons.check_circle_rounded,
+                    color: successGreen,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -403,7 +410,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               ? null
               : _placeOrder,
           style: FilledButton.styleFrom(
-            backgroundColor: teal,
+            backgroundColor: brandBlue,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
@@ -437,7 +444,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: Text(
               'SERVER CHECKOUT QUOTE',
               style: TextStyle(
-                color: navy,
+                color: brandBlue,
                 fontWeight: FontWeight.w900,
                 letterSpacing: .4,
               ),
@@ -463,7 +470,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         Text(
           money(value),
           style: TextStyle(
-            color: navy,
+            color: brandBlue,
             fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
           ),
         ),

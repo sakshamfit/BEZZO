@@ -26,7 +26,7 @@ missing; never commit the keystore or those values.
 `lib/` keeps startup and app configuration separate from feature code:
 
 - `app.dart` wires startup, API configuration and feature repositories.
-- `core/` contains shared colors and money formatting.
+- `core/` contains the shared Stitch-derived blue/slate palette, Material theme, and money formatting.
 - `features/catalog/` contains live catalog and category API models.
 - `features/cart/` contains the server-backed cart and basket screen.
 - `features/auth/` contains buyer registration, email/phone verification, password/OTP sign-in, and session handling.
@@ -35,3 +35,5 @@ missing; never commit the keystore or those values.
 - `features/marketplace/presentation/` contains the storefront, product cards, and box artwork.
 
 Authentication, buyer registration, catalog browsing, supplier offers, cart, delivery quote, COD checkout, order history, and the in-app notification inbox use the BEZZO API. Buyers can edit their business profile, upload/view/remove eligible private compliance documents, open order details, view supplier fulfilments/delivery/payment/timeline, and request server-validated cancellation. Documents are capped at 1 MB in this client because the API's default JSON body limit is 2 MB; production should use a presigned direct-to-storage flow. The UI presents quantities as sealed medicine boxes and applies each supplier offer's MOQ. Session credentials use platform secure storage, restore against `/me`, refresh after an API 401, and are revoked on sign-out. Online payment handoff, push notifications, production signing/release automation, and device-matrix verification remain to be connected/configured.
+
+The visual language follows the supplied Stitch reference: electric blue actions, cool white and pale-blue surfaces, slate text, thin borders, rounded cards, and uncluttered whitespace. B2B content remains BEZZO-specific: verified suppliers, box-level pricing, MOQ-aware quantities, and sealed medicine-box artwork; no tablet or strip product imagery is used.

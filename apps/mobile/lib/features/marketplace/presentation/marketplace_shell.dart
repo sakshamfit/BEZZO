@@ -218,7 +218,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               selectedIndex: tab,
               onDestinationSelected: (index) => setState(() => tab = index),
               backgroundColor: Colors.white,
-              indicatorColor: const Color(0xFFE4F4E8),
+              indicatorColor: surfaceBlue,
               destinations: [
                 NavigationDestination(
                   icon: Icon(Icons.storefront_outlined),
@@ -344,7 +344,10 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
   );
 
   Widget _header() => Container(
-    color: brandYellow,
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(bottom: BorderSide(color: borderSubtle)),
+    ),
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 15),
     child: Column(
       children: [
@@ -354,19 +357,29 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: navy,
+                color: surfaceBlue,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.bolt_rounded, color: brandYellow),
+              child: const Icon(Icons.inventory_2_rounded, color: brandBlue),
             ),
             const SizedBox(width: 9),
             const Text(
               'BEZZO',
               style: TextStyle(
-                color: navy,
+                color: brandBlue,
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'PHARMACY WHOLESALE',
+              style: TextStyle(
+                color: muted,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: .6,
               ),
             ),
             const Spacer(),
@@ -375,14 +388,14 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               onPressed: _openCart,
               style: IconButton.styleFrom(
                 backgroundColor: Colors.white,
-                foregroundColor: navy,
+                foregroundColor: brandBlue,
               ),
               icon: AnimatedBuilder(
                 animation: widget.store,
                 builder: (_, _) => Badge(
                   isLabelVisible: widget.store.totalBoxes > 0,
                   label: Text('${widget.store.totalBoxes}'),
-                  backgroundColor: teal,
+                  backgroundColor: brandBlue,
                   child: const Icon(Icons.shopping_bag_outlined),
                 ),
               ),
@@ -394,11 +407,11 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
           onTap: _openCheckout,
           child: Row(
             children: [
-              const Icon(Icons.location_on_rounded, size: 18, color: navy),
+              const Icon(Icons.location_on_rounded, size: 18, color: brandBlue),
               const SizedBox(width: 4),
               const Text(
                 'Delivery address',
-                style: TextStyle(color: navy, fontSize: 11),
+                style: TextStyle(color: brandBlue, fontSize: 11),
               ),
               const SizedBox(width: 5),
               const Expanded(
@@ -407,7 +420,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: navy,
+                    color: brandBlue,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
@@ -416,7 +429,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               const Icon(
                 Icons.keyboard_arrow_down_rounded,
                 size: 19,
-                color: navy,
+                color: brandBlue,
               ),
             ],
           ),
@@ -425,7 +438,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         TextField(
           onChanged: _onSearchChanged,
           decoration: InputDecoration(
-            hintText: 'Search medicines, generics, brands',
+            hintText: 'Search medicine, brand or salt',
             prefixIcon: const Icon(Icons.search_rounded, color: muted),
             suffixIcon: IconButton(
               tooltip: 'Search filters',
@@ -436,7 +449,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               icon: const Icon(Icons.tune_rounded, color: muted),
             ),
             filled: true,
-            fillColor: Colors.white,
+            fillColor: const Color(0xFFF1F5F9),
             contentPadding: const EdgeInsets.symmetric(vertical: 14),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(15),
@@ -452,12 +465,12 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
     child: Row(
       children: [
-        const Icon(Icons.verified_rounded, size: 17, color: teal),
+        const Icon(Icons.verified_rounded, size: 17, color: brandBlue),
         const SizedBox(width: 6),
         const Text(
           'Verified wholesale network',
           style: TextStyle(
-            color: navy,
+            color: brandBlue,
             fontWeight: FontWeight.w700,
             fontSize: 11,
           ),
@@ -481,8 +494,12 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
     padding: const EdgeInsets.fromLTRB(17, 16, 15, 16),
     decoration: BoxDecoration(
-      color: const Color(0xFFDFF4B8),
-      borderRadius: BorderRadius.circular(19),
+      gradient: const LinearGradient(
+        colors: [electricBlue, brandBlue],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(20),
     ),
     child: Row(
       children: [
@@ -493,13 +510,13 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .78),
+                  color: Colors.white.withValues(alpha: .16),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: const Text(
-                  '✓  VERIFIED SUPPLIERS',
+                  'VERIFIED B2B SUPPLIERS',
                   style: TextStyle(
-                    color: teal,
+                    color: Colors.white,
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
                     letterSpacing: .3,
@@ -508,18 +525,21 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               ),
               const SizedBox(height: 9),
               const Text(
-                'Medicines in\nwholesale boxes',
+                'Wholesale boxes,\nready for your store',
                 style: TextStyle(
-                  color: ink,
+                  color: Colors.white,
                   fontWeight: FontWeight.w900,
                   fontSize: 20,
                   height: 1.08,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'Clear MOQs · reliable supply · one basket',
-                style: TextStyle(color: Color(0xFF43533C), fontSize: 10),
+              Text(
+                'Sealed packs · clear MOQs · one basket',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: .86),
+                  fontSize: 10,
+                ),
               ),
             ],
           ),
@@ -528,10 +548,14 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
           width: 82,
           height: 82,
           decoration: BoxDecoration(
-            color: const Color(0xFFBFE68A),
+            color: Colors.white.withValues(alpha: .14),
             borderRadius: BorderRadius.circular(22),
           ),
-          child: const Icon(Icons.inventory_2_rounded, color: teal, size: 48),
+          child: const Icon(
+            Icons.inventory_2_rounded,
+            color: Colors.white,
+            size: 48,
+          ),
         ),
       ],
     ),
@@ -561,11 +585,11 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         width: 91,
         padding: const EdgeInsets.fromLTRB(8, 9, 8, 8),
         decoration: BoxDecoration(
-          color: _categoryTint(name),
-          borderRadius: BorderRadius.circular(15),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected ? teal : Colors.transparent,
-            width: 1.5,
+            color: selected ? electricBlue : borderSubtle,
+            width: selected ? 1.5 : 1,
           ),
         ),
         child: Column(
@@ -574,10 +598,10 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               height: 48,
               width: 48,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .75),
-                shape: BoxShape.circle,
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(_categoryIcon(name), color: navy, size: 25),
+              child: Icon(_categoryIcon(name), color: brandBlue, size: 25),
             ),
             const SizedBox(height: 5),
             Text(
@@ -604,13 +628,6 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     );
   }
 
-  Color _categoryTint(String name) => switch (name) {
-    'Pain relief' => const Color(0xFFFFE7DD),
-    'Cold & allergy' => const Color(0xFFE4E6FF),
-    'Digestive care' => const Color(0xFFE0F2DC),
-    _ => const Color(0xFFFFEFC7),
-  };
-
   Widget _sectionTitle(String title, String action, {VoidCallback? onTap}) =>
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 11),
@@ -633,7 +650,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                   Text(
                     action,
                     style: const TextStyle(
-                      color: teal,
+                      color: brandBlue,
                       fontWeight: FontWeight.w800,
                       fontSize: 10,
                     ),
@@ -642,7 +659,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                     const Icon(
                       Icons.chevron_right_rounded,
                       size: 17,
-                      color: teal,
+                      color: brandBlue,
                     ),
                 ],
               ),
@@ -671,7 +688,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
   Widget _basketBar() => Padding(
     padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
     child: Material(
-      color: teal,
+      color: brandBlue,
       borderRadius: BorderRadius.circular(17),
       child: InkWell(
         onTap: _openCart,
@@ -682,7 +699,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
             children: [
               const Icon(
                 Icons.shopping_bag_rounded,
-                color: brandYellow,
+                color: Colors.white,
                 size: 26,
               ),
               const SizedBox(width: 10),
@@ -700,7 +717,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                     ),
                     const Text(
                       'Minimum order quantities applied',
-                      style: TextStyle(color: Color(0xFFD9F3DE), fontSize: 9),
+                      style: TextStyle(color: Color(0xFFDCE8FF), fontSize: 9),
                     ),
                   ],
                 ),
@@ -719,13 +736,17 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                     Text(
                       'View basket',
                       style: TextStyle(
-                        color: teal,
+                        color: brandBlue,
                         fontWeight: FontWeight.w900,
                         fontSize: 11,
                       ),
                     ),
                     SizedBox(width: 4),
-                    Icon(Icons.arrow_forward_rounded, color: teal, size: 15),
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      color: brandBlue,
+                      size: 15,
+                    ),
                   ],
                 ),
               ),
@@ -842,7 +863,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                   Text(
                     product.name,
                     style: const TextStyle(
-                      color: navy,
+                      color: brandBlue,
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                     ),
@@ -896,14 +917,17 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                         margin: const EdgeInsets.only(bottom: 9),
                         child: ListTile(
                           leading: const CircleAvatar(
-                            backgroundColor: Color(0xFFE8F5F1),
-                            child: Icon(Icons.verified_rounded, color: teal),
+                            backgroundColor: surfaceBlue,
+                            child: Icon(
+                              Icons.verified_rounded,
+                              color: brandBlue,
+                            ),
                           ),
                           title: Text(
                             (offer['supplierName'] as String?) ??
                                 'Verified supplier',
                             style: const TextStyle(
-                              color: navy,
+                              color: brandBlue,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -918,7 +942,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                               Text(
                                 price is num ? money(price) : '—',
                                 style: const TextStyle(
-                                  color: navy,
+                                  color: brandBlue,
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
@@ -1009,7 +1033,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               IconButton(
                 tooltip: 'Refresh orders',
                 onPressed: _loadOrders,
-                icon: const Icon(Icons.refresh_rounded, color: navy),
+                icon: const Icon(Icons.refresh_rounded, color: brandBlue),
               ),
             ],
           ),
@@ -1059,8 +1083,8 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               color: Colors.white,
               child: ListTile(
                 leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFE8F5F1),
-                  child: Icon(Icons.inventory_2_outlined, color: teal),
+                  backgroundColor: surfaceBlue,
+                  child: Icon(Icons.inventory_2_outlined, color: brandBlue),
                 ),
                 title: Text(
                   'Order ${order.orderNumber}',
@@ -1075,7 +1099,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                   money(order.grandTotal),
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
-                    color: navy,
+                    color: brandBlue,
                   ),
                 ),
                 onTap: () => Navigator.of(context).push(

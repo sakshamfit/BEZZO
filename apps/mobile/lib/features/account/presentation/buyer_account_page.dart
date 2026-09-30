@@ -296,7 +296,7 @@ class _BuyerAccountPageState extends State<BuyerAccountPage> {
                               children: [
                                 const Icon(
                                   Icons.store_mall_directory_outlined,
-                                  color: teal,
+                                  color: brandBlue,
                                 ),
                                 const SizedBox(width: 8),
                                 const Expanded(
@@ -432,7 +432,7 @@ class _BuyerAccountPageState extends State<BuyerAccountPage> {
                         ListTile(
                           leading: const Icon(
                             Icons.location_on_outlined,
-                            color: navy,
+                            color: brandBlue,
                           ),
                           title: const Text('Delivery addresses'),
                           subtitle: const Text(
@@ -445,7 +445,7 @@ class _BuyerAccountPageState extends State<BuyerAccountPage> {
                         ListTile(
                           leading: const Icon(
                             Icons.logout_rounded,
-                            color: navy,
+                            color: brandBlue,
                           ),
                           title: const Text('Sign out'),
                           onTap: widget.onSignOut,
@@ -461,7 +461,7 @@ class _BuyerAccountPageState extends State<BuyerAccountPage> {
 
   Widget _documentTile(BuyerDocument document) => ListTile(
     contentPadding: EdgeInsets.zero,
-    leading: const Icon(Icons.description_outlined, color: teal),
+    leading: const Icon(Icons.description_outlined, color: brandBlue),
     title: Text(
       _label(document.documentType),
       style: const TextStyle(fontWeight: FontWeight.w700),
@@ -482,7 +482,7 @@ class _BuyerAccountPageState extends State<BuyerAccountPage> {
           IconButton(
             tooltip: 'View document',
             onPressed: () => _openDocument(document),
-            icon: const Icon(Icons.open_in_new_rounded, color: navy),
+            icon: const Icon(Icons.open_in_new_rounded, color: brandBlue),
           ),
         _status(document.status),
         if (document.status == 'PENDING' || document.status == 'REJECTED')

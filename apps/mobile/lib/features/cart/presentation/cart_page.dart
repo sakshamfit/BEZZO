@@ -27,7 +27,7 @@ class CartPage extends StatelessWidget {
         'Wholesale basket',
         style: TextStyle(fontWeight: FontWeight.w800),
       ),
-      backgroundColor: brandYellow,
+      backgroundColor: Colors.white,
     ),
     body: AnimatedBuilder(
       animation: store,
@@ -71,7 +71,7 @@ class CartPage extends StatelessWidget {
               color: Colors.white,
               child: const ListTile(
                 dense: true,
-                leading: Icon(Icons.location_on_rounded, color: teal),
+                leading: Icon(Icons.location_on_rounded, color: brandBlue),
                 title: Text(
                   'Delivery address',
                   style: TextStyle(fontSize: 12, color: muted),
@@ -90,18 +90,18 @@ class CartPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(13),
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F5F1),
+                color: surfaceBlue,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.inventory_2_outlined, color: teal),
+                  Icon(Icons.inventory_2_outlined, color: brandBlue),
                   SizedBox(width: 9),
                   Expanded(
                     child: Text(
                       'Quantities use full sealed boxes. Each offer enforces its supplier MOQ and live stock.',
                       style: TextStyle(
-                        color: navy,
+                        color: brandBlue,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -138,7 +138,7 @@ class CartPage extends StatelessWidget {
                 child: FilledButton(
                   onPressed: store.mutating ? null : () => _checkout(context),
                   style: FilledButton.styleFrom(
-                    backgroundColor: teal,
+                    backgroundColor: brandBlue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -191,8 +191,8 @@ class CartPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const CircleAvatar(
-                  backgroundColor: Color(0xFFE8F5F1),
-                  child: Icon(Icons.inventory_2_outlined, color: teal),
+                  backgroundColor: surfaceBlue,
+                  child: Icon(Icons.inventory_2_outlined, color: brandBlue),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -239,7 +239,7 @@ class CartPage extends StatelessWidget {
                 Text(
                   money(line.lineTotal),
                   style: const TextStyle(
-                    color: navy,
+                    color: brandBlue,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -307,10 +307,10 @@ class CartPage extends StatelessWidget {
       width: 30,
       height: 30,
       decoration: BoxDecoration(
-        color: const Color(0xFFE8F5F1),
+        color: surfaceBlue,
         borderRadius: BorderRadius.circular(7),
       ),
-      child: Icon(icon, size: 16, color: onTap == null ? muted : navy),
+      child: Icon(icon, size: 16, color: onTap == null ? muted : brandBlue),
     ),
   );
 
@@ -363,7 +363,7 @@ class CartPage extends StatelessWidget {
       Text(
         value,
         style: TextStyle(
-          color: navy,
+          color: brandBlue,
           fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
         ),
       ),

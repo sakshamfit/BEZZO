@@ -131,7 +131,7 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
     backgroundColor: canvas,
     appBar: AppBar(
       title: const Text('Notifications'),
-      backgroundColor: brandYellow,
+      backgroundColor: Colors.white,
       actions: [
         TextButton(
           onPressed: _markingAll || !_items.any((item) => !item.read)
@@ -198,17 +198,19 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
                     leading: CircleAvatar(
                       backgroundColor: item.read
                           ? const Color(0xFFF0F2F4)
-                          : const Color(0xFFE4F4E8),
+                          : surfaceBlue,
                       child: Icon(
                         _iconFor(item.type),
-                        color: item.read ? muted : teal,
+                        color: item.read ? muted : brandBlue,
                       ),
                     ),
                     title: Text(
                       item.title,
                       style: TextStyle(
                         color: ink,
-                        fontWeight: item.read ? FontWeight.w600 : FontWeight.w800,
+                        fontWeight: item.read
+                            ? FontWeight.w600
+                            : FontWeight.w800,
                       ),
                     ),
                     subtitle: Padding(
@@ -221,7 +223,7 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
                     isThreeLine: true,
                     trailing: item.read
                         ? null
-                        : const Icon(Icons.circle, color: teal, size: 10),
+                        : const Icon(Icons.circle, color: brandBlue, size: 10),
                   ),
                 );
               },
@@ -244,7 +246,8 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
     if (date.millisecondsSinceEpoch == 0) return '';
     final local = date.toLocal();
     final now = DateTime.now();
-    final isToday = local.year == now.year &&
+    final isToday =
+        local.year == now.year &&
         local.month == now.month &&
         local.day == now.day;
     final time =

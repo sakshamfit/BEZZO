@@ -119,7 +119,11 @@ class _UnsupportedRoleScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.business_center_outlined, size: 56, color: navy),
+            const Icon(
+              Icons.business_center_outlined,
+              size: 56,
+              color: brandBlue,
+            ),
             const SizedBox(height: 16),
             const Text(
               'This app is for verified pharmacy buyers.',
@@ -145,9 +149,9 @@ class _BezzoMark extends StatelessWidget {
     width: size,
     height: size,
     decoration: BoxDecoration(
-      color: brandYellow,
+      color: surfaceBlue,
       borderRadius: BorderRadius.circular(size * .28),
     ),
-    child: Icon(Icons.inventory_2_rounded, color: navy, size: size * .52),
+    child: Icon(Icons.inventory_2_rounded, color: brandBlue, size: size * .52),
   );
 }

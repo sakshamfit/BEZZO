@@ -117,7 +117,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
               ? 'Order ${order!['orderNumber']}'
               : 'Order details',
         ),
-        backgroundColor: brandYellow,
+        backgroundColor: Colors.white,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -191,7 +191,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     final orderNumber = order['orderNumber'] as String? ?? '';
     final date = order['placedAt'] as String? ?? '';
     return Card(
-      color: navy,
+      color: brandBlue,
       child: Padding(
         padding: const EdgeInsets.all(17),
         child: Column(
@@ -200,7 +200,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
             Text(
               status,
               style: const TextStyle(
-                color: brandYellow,
+                color: surfaceBlue,
                 fontWeight: FontWeight.w900,
                 letterSpacing: .5,
               ),
@@ -245,7 +245,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
             Text(
               title,
               style: const TextStyle(
-                color: navy,
+                color: brandBlue,
                 fontWeight: FontWeight.w900,
                 fontSize: 15,
               ),
@@ -266,7 +266,11 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.inventory_2_outlined, color: teal, size: 20),
+              const Icon(
+                Icons.inventory_2_outlined,
+                color: brandBlue,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -297,7 +301,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
         .map(
           (item) => ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.local_shipping_outlined, color: teal),
+            leading: const Icon(
+              Icons.local_shipping_outlined,
+              color: brandBlue,
+            ),
             title: Text(item['supplierName'] as String? ?? 'Supplier'),
             subtitle: Text(
               (item['status'] as String? ?? 'PENDING').replaceAll('_', ' '),
@@ -336,7 +343,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
           (event) => ListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            leading: const Icon(Icons.circle, size: 10, color: teal),
+            leading: const Icon(Icons.circle, size: 10, color: brandBlue),
             title: Text(
               (event['toStatus'] as String? ?? 'UPDATE').replaceAll('_', ' '),
             ),

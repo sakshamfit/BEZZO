@@ -111,10 +111,20 @@ Flutter analysis completed with no issues (`flutter analyze --fatal-infos --no-p
 Flutter tests passed (`flutter test --no-pub`). A local debug APK build is blocked by this Windows
 OneDrive checkout: normal Flutter refresh cannot delete an ignored iOS plugin reparse point; with
 `--no-pub`, Gradle fails with `Unable to establish loopback connection`. Do not delete/move the ignored
-iOS directory as a workaround without first preserving its contents. GitHub CI was not remotely checked
-because the `gh` CLI is unavailable in this environment. Production mobile build still needs upload
+iOS directory as a workaround without first preserving its contents. GitHub Actions run #4 for commit
+`174bccf` was visible and still in progress; public logs were not available while it ran. Production mobile build still needs upload
 keystore/signing values and Play Console access. Production deployment still needs hosting, Redis,
 object storage, verified email/SMS senders, and provider credentials appropriate to enabled features.
+
+**Stitch visual system (2026-09-30):** adapted the supplied Blinkit-clone reference to BEZZO's B2B
+medicine workflow. Flutter shared tokens now use electric blue, pale cool-blue/white surfaces, slate
+text and hairline borders. Storefront banner, category tiles, product cards, basket bar, auth, checkout,
+orders and alerts use the updated palette and rounded treatment. Box art remains sealed-box-only;
+copy emphasizes verified suppliers, wholesale MOQs and price per box. `flutter analyze --fatal-infos
+--no-pub` and `flutter test --no-pub` passed after the visual changes (4 tests). A browser preview of
+the Flutter sign-in page rendered with the new palette. The signed-in storefront was not visually
+previewed because this environment has no test account. Chrome DevTools MCP was added to global Codex
+config as `chrome-devtools` from the user's supplied command; its tool schemas require a Codex reload.
 
 **Branch** `main`. **PR #1** (web app + payments) is merged into `main`.
 History: `781d1a9` (specs uploaded) → `dd0835c` → `6f9a628` → `d38b108` (foundation → identity →

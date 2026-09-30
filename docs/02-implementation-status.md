@@ -23,8 +23,21 @@ Status vocabulary (as required by the brief):
 - **BLOCKED LOCALLY:** Flutter's dependency refresh cannot delete an ignored iOS plugin reparse point
   in the OneDrive checkout. `flutter build apk --debug --no-pub` reached Gradle, which failed with
   `Unable to establish loopback connection`. Do not remove the ignored iOS directory as a workaround.
-- **NOT VERIFIED REMOTELY:** GitHub Actions could not be inspected because `gh` is not installed here.
-  The CI workflow itself still includes Linux APK build and artifact upload.
+- **IN PROGRESS REMOTELY:** GitHub Actions run #4 for commit `174bccf` was visible and still running
+  when checked. Logs are not available from the public page while it runs; `gh` is not installed here.
+
+### Stitch visual system adaptation (2026-09-30)
+
+- **IMPLEMENTED:** the provided design reference is adapted in Flutter with electric-blue actions,
+  cool white/pale-blue surfaces, slate text, hairline borders, rounded product cards, cleaner search,
+  a blue B2B hero panel and persistent basket summary. Shared tokens live in
+  `apps/mobile/lib/core/theme/app_colors.dart`; the app-wide Material theme lives in `app.dart`.
+- **BEZZO-specific:** copy and product surfaces emphasize verified suppliers, sealed box artwork,
+  wholesale prices and supplier MOQs. No tablet or strip imagery was introduced. Product and checkout
+  behavior is unchanged.
+- **VERIFIED LOCALLY:** Flutter analyzer passes, all 4 existing Flutter tests pass, and the sign-in
+  page rendered in a local browser preview. A signed-in storefront visual check requires a configured
+  test account. Plus Jakarta Sans is not bundled; the app retains its existing Roboto font stack.
 
 ---
 

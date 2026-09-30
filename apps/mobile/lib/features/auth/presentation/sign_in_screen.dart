@@ -181,7 +181,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       'Wholesale, made simple.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: navy,
+                        color: brandBlue,
                         fontSize: 25,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -.5,
@@ -376,7 +376,7 @@ class _SignInScreenState extends State<SignInScreen> {
                           ? _signInWithPassword
                           : _requestCode,
                       style: FilledButton.styleFrom(
-                        backgroundColor: teal,
+                        backgroundColor: brandBlue,
                         minimumSize: const Size.fromHeight(52),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
@@ -460,9 +460,9 @@ class _BrandMark extends StatelessWidget {
     width: 72,
     height: 72,
     decoration: BoxDecoration(
-      color: brandYellow,
+      color: surfaceBlue,
       borderRadius: BorderRadius.circular(22),
     ),
-    child: const Icon(Icons.inventory_2_rounded, color: navy, size: 38),
+    child: const Icon(Icons.inventory_2_rounded, color: brandBlue, size: 38),
   );
 }
