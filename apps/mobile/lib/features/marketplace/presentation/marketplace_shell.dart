@@ -16,6 +16,8 @@ import '../../catalog/domain/medicine.dart';
 import '../../checkout/data/checkout_repository.dart';
 import '../../checkout/presentation/checkout_page.dart';
 import '../../checkout/presentation/order_detail_page.dart';
+import '../../notifications/data/notification_repository.dart';
+import '../../notifications/presentation/notification_inbox_page.dart';
 import 'widgets/empty_state.dart';
 import 'widgets/product_card.dart';
 
@@ -26,6 +28,7 @@ class MarketplaceShell extends StatefulWidget {
     required this.auth,
     required this.catalog,
     required this.checkout,
+    required this.notifications,
     required this.buyerAccount,
   });
 
@@ -33,6 +36,7 @@ class MarketplaceShell extends StatefulWidget {
   final AuthController auth;
   final CatalogRepository catalog;
   final CheckoutRepository checkout;
+  final NotificationRepository notifications;
   final BuyerAccountRepository buyerAccount;
 
   @override
@@ -50,6 +54,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
   List<OrderSummary> orders = const [];
   bool ordersLoading = true;
   String? ordersError;
+  int _unreadNotificationCount = 0;
   int _catalogRequest = 0;
   Timer? _searchDebounce;
   late final ForegroundRefreshObserver _foregroundRefreshObserver =
@@ -57,6 +62,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
         onResumed: () {
           unawaited(widget.store.load());
           unawaited(_loadOrders());
+          unawaited(_loadUnreadNotificationCount());
         },
       );
 
@@ -76,6 +82,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     unawaited(_loadCatalog());
     unawaited(widget.store.load());
     unawaited(_loadOrders());
+    unawaited(_loadUnreadNotificationCount());
   }
 
   @override
@@ -169,9 +176,33 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
     }
   }
 
+  Future<void> _loadUnreadNotificationCount() async {
+    try {
+      final count = await widget.notifications.unreadCount();
+      if (mounted) setState(() => _unreadNotificationCount = count);
+    } on ApiException {
+      // Notifications are supplemental; a temporary inbox failure must not block shopping.
+    } on FormatException {
+      // Ignore malformed optional badge data and allow the inbox to show its own error state.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pages = <Widget>[_home(), _categories(), _orders(), _account()];
+    final pages = <Widget>[
+      _home(),
+      _categories(),
+      _orders(),
+      NotificationInboxPage(
+        repository: widget.notifications,
+        onUnreadCountChanged: (count) {
+          if (mounted && count != _unreadNotificationCount) {
+            setState(() => _unreadNotificationCount = count);
+          }
+        },
+      ),
+      _account(),
+    ];
 
     return Scaffold(
       body: SafeArea(
@@ -188,7 +219,7 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
               onDestinationSelected: (index) => setState(() => tab = index),
               backgroundColor: Colors.white,
               indicatorColor: const Color(0xFFE4F4E8),
-              destinations: const [
+              destinations: [
                 NavigationDestination(
                   icon: Icon(Icons.storefront_outlined),
                   selectedIcon: Icon(Icons.storefront),
@@ -203,6 +234,19 @@ class _MarketplaceShellState extends State<MarketplaceShell> {
                   icon: Icon(Icons.receipt_long_outlined),
                   selectedIcon: Icon(Icons.receipt_long),
                   label: 'Orders',
+                ),
+                NavigationDestination(
+                  icon: Badge(
+                    isLabelVisible: _unreadNotificationCount > 0,
+                    label: Text('$_unreadNotificationCount'),
+                    child: const Icon(Icons.notifications_outlined),
+                  ),
+                  selectedIcon: Badge(
+                    isLabelVisible: _unreadNotificationCount > 0,
+                    label: Text('$_unreadNotificationCount'),
+                    child: const Icon(Icons.notifications),
+                  ),
+                  label: 'Alerts',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.business_outlined),

@@ -4,7 +4,7 @@ Purpose: a fresh session (human or agent) picks this up and knows where the work
 what is proven, what is deliberately not done, and which traps cost time last time. Update this file at
 the end of every session; it is the only document here that describes *state* rather than product.
 
-Last updated: **2026-09-29** (Supabase bootstrap/security lockdown and logo concept checkpoint; see §2).
+Last updated: **2026-09-30** (mobile notification inbox, APK artifact, and local build checkpoint; see §2).
 
 ---
 
@@ -103,6 +103,18 @@ consumption use atomic writes. No production image/deploy workflow, cluster, Git
 payment/storage credentials, OpenSearch (if enabled), mobile signing or API domain are configured. Many domain features remain open as listed
 in `docs/02-implementation-status.md` (delivery, picker UI/runs, settlements, promotions, broader
 ops/analytics, load/DR). Repo CI is added but has not been run by GitHub yet. The latest API auth, notification, IP rate-limit, web refresh-cookie, password-reset and mobile lifecycle changes are in the working tree; see the 2026-09-29 production-readiness iteration in `docs/02-implementation-status.md`.
+
+**Production-readiness continuation (2026-09-30):** Flutter now has an API-backed in-app notification
+inbox with mark-one/read-all, pull-to-refresh and an unread badge; this requires no new provider or
+credential. CI uploads its debug APK as `bezzo-android-debug-apk` for 14 days after a successful run.
+Flutter analysis completed with no issues (`flutter analyze --fatal-infos --no-pub`), and the 4 existing
+Flutter tests passed (`flutter test --no-pub`). A local debug APK build is blocked by this Windows
+OneDrive checkout: normal Flutter refresh cannot delete an ignored iOS plugin reparse point; with
+`--no-pub`, Gradle fails with `Unable to establish loopback connection`. Do not delete/move the ignored
+iOS directory as a workaround without first preserving its contents. GitHub CI was not remotely checked
+because the `gh` CLI is unavailable in this environment. Production mobile build still needs upload
+keystore/signing values and Play Console access. Production deployment still needs hosting, Redis,
+object storage, verified email/SMS senders, and provider credentials appropriate to enabled features.
 
 **Branch** `main`. **PR #1** (web app + payments) is merged into `main`.
 History: `781d1a9` (specs uploaded) → `dd0835c` → `6f9a628` → `d38b108` (foundation → identity →

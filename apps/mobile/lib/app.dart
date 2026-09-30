@@ -12,6 +12,7 @@ import 'features/cart/data/cart_repository.dart';
 import 'features/account/data/buyer_account_repository.dart';
 import 'features/catalog/data/catalog_repository.dart';
 import 'features/checkout/data/checkout_repository.dart';
+import 'features/notifications/data/notification_repository.dart';
 import 'features/auth/application/auth_controller.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/auth/presentation/auth_gate.dart';
@@ -38,6 +39,8 @@ class _BezzoAppState extends State<BezzoApp> {
   late final CheckoutRepository _checkoutRepository = CheckoutRepository(
     _apiClient,
   );
+  late final NotificationRepository _notificationRepository =
+      NotificationRepository(_apiClient);
   late final BuyerAccountRepository _buyerAccountRepository =
       BuyerAccountRepository(_apiClient);
   late final AuthController _authController = AuthController(
@@ -80,6 +83,7 @@ class _BezzoAppState extends State<BezzoApp> {
         cartStore: _cartStore,
         catalog: _catalogRepository,
         checkout: _checkoutRepository,
+        notifications: _notificationRepository,
         buyerAccount: _buyerAccountRepository,
       ),
     );

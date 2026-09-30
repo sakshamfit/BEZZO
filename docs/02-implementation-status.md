@@ -1,6 +1,6 @@
 # BEZZO — implementation status (living memory)
 
-**Last updated:** 2026-09-29
+**Last updated:** 2026-09-30
 **Branch:** `main`
 **Purpose:** this file is the project's memory. It records *what actually exists in code*, how it was
 verified, what is deliberately absent, and what comes next. It is updated at the end of every work
@@ -10,6 +10,21 @@ and has been exercised against the running stack.
 Status vocabulary (as required by the brief):
 **IMPLEMENTED** · **PARTIALLY IMPLEMENTED** · **MOCKED** · **NOT IMPLEMENTED** ·
 **REQUIRES CONFIGURATION** · **REQUIRES EXTERNAL CREDENTIALS**.
+
+### Production-readiness continuation (2026-09-30)
+
+- **IMPLEMENTED:** the Flutter app has an API-backed notification inbox with unread count, mark-one-read,
+  mark-all-read, pull-to-refresh, and an Alerts navigation destination. No external provider credentials
+  are needed for in-app notifications. Notification reference deep links remain unspecified.
+- **IMPLEMENTED:** CI uploads the Android debug APK as `bezzo-android-debug-apk` for 14 days after a
+  successful Flutter job. This is a debug artifact, not a Play Store release.
+- **VERIFIED LOCALLY:** `flutter analyze --fatal-infos --no-pub` reported no issues; `flutter test
+  --no-pub` passed all 4 existing tests.
+- **BLOCKED LOCALLY:** Flutter's dependency refresh cannot delete an ignored iOS plugin reparse point
+  in the OneDrive checkout. `flutter build apk --debug --no-pub` reached Gradle, which failed with
+  `Unable to establish loopback connection`. Do not remove the ignored iOS directory as a workaround.
+- **NOT VERIFIED REMOTELY:** GitHub Actions could not be inspected because `gh` is not installed here.
+  The CI workflow itself still includes Linux APK build and artifact upload.
 
 ---
 

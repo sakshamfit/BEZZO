@@ -5,6 +5,7 @@ import '../../account/data/buyer_account_repository.dart';
 import '../../cart/application/cart_store.dart';
 import '../../catalog/data/catalog_repository.dart';
 import '../../checkout/data/checkout_repository.dart';
+import '../../notifications/data/notification_repository.dart';
 import '../../marketplace/presentation/marketplace_shell.dart';
 import '../application/auth_controller.dart';
 import 'sign_in_screen.dart';
@@ -16,6 +17,7 @@ class AuthGate extends StatelessWidget {
     required this.cartStore,
     required this.catalog,
     required this.checkout,
+    required this.notifications,
     required this.buyerAccount,
   });
 
@@ -23,6 +25,7 @@ class AuthGate extends StatelessWidget {
   final CartStore cartStore;
   final CatalogRepository catalog;
   final CheckoutRepository checkout;
+  final NotificationRepository notifications;
   final BuyerAccountRepository buyerAccount;
 
   @override
@@ -41,6 +44,7 @@ class AuthGate extends StatelessWidget {
           auth: auth,
           catalog: catalog,
           checkout: checkout,
+          notifications: notifications,
           buyerAccount: buyerAccount,
         ),
         AuthStatus.signedIn => _UnsupportedRoleScreen(
