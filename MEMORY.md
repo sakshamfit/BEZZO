@@ -141,9 +141,14 @@ no-password demo buyer entry, four sealed-box sample products, working in-memory
 COD checkout, and order list/detail. It constructs no API client, Supabase connection or secure
 session. All 7 mobile tests pass and Dart analysis is clean. Local packaging fails before project
 compilation because Windows Java `Selector.open()` cannot establish its loopback pipe (reproduced by
-minimal Java probe, so Gradle options and JDK 17 vs Android Studio JBR do not resolve it). CI was
-updated to build/upload `app-arm64-v8a-debug.apk` with demo mode; push/run it and retrieve the artifact
-to deliver. It is a showcase debug APK, never a Play Store signed release or real commerce system.
+minimal Java probe, so Gradle options and JDK 17 vs Android Studio JBR do not resolve it). GitHub run
+`36689870200` for commit `8559347` built the demo APK successfully and uploaded artifact
+`bezzo-android-showcase-apks`; the separate PostgreSQL integration job failed. The artifact ZIP was
+verified against SHA-256 `d544073a923f46a7fd9d39eefbcd5cd427f6a33a4f98b80023c77c345006e65b`. Extracted
+APK: `apps/mobile/build/showcase-artifact/app-arm64-v8a-debug.apk`, 85,298,609 bytes, SHA-256
+`946faef2a1435c7d58275248152cab427cea33851b3c7f0cb311795b7a366007`; package
+`com.bezzo.bezzo_mobile`, version `1.0.0`, min SDK 24. No Android device was connected for an install
+smoke test. This is a showcase debug APK, never a Play Store signed release or real commerce system.
 
 **Stitch visual system (2026-09-30):** adapted the supplied Blinkit-clone reference to BEZZO's B2B
 medicine workflow. Flutter shared tokens now use electric blue, pale cool-blue/white surfaces, slate

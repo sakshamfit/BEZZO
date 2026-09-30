@@ -58,7 +58,15 @@ Status vocabulary (as required by the brief):
   in-memory and resets when the app restarts. Flutter analysis passes and all 7 tests pass. Local
   Android packaging is blocked before Gradle compilation because Java cannot establish its Windows
   loopback selector pipe (reproduced with a standalone Java selector probe). CI is updated to produce
-  and upload an arm64 demo debug APK; this workflow change still needs its GitHub run verified.
+  and upload an arm64 demo debug APK (GitHub run evidence follows).
+- **SHOWCASE APK BUILT AND VERIFIED:** commit `8559347`, GitHub run `36689870200`; Flutter job passed,
+  built the split-per-ABI demo APK and uploaded artifact `bezzo-android-showcase-apks` (50,777,331-byte
+  ZIP, GitHub SHA-256 `d544073a923f46a7fd9d39eefbcd5cd427f6a33a4f98b80023c77c345006e65b`). Extracted
+  arm64 APK is `apps/mobile/build/showcase-artifact/app-arm64-v8a-debug.apk` (85,298,609 bytes,
+  SHA-256 `946faef2a1435c7d58275248152cab427cea33851b3c7f0cb311795b7a366007`); Android package
+  metadata verified as `com.bezzo.bezzo_mobile`, version `1.0.0`, min SDK 24, target SDK 36. This is
+  an unsigned debug showcase package, not a production/release-signed app. No connected device was
+  available for installation verification. The separate PostgreSQL integration job still fails.
 
 ### Stitch visual system adaptation (2026-09-30)
 
