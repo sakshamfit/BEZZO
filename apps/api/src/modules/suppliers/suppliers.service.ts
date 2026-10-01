@@ -1618,14 +1618,10 @@ export class SuppliersService {
 
       let hubId = fulfillment.hub_id;
       if (!hubId) {
-        const supHub = await client.query<{ hub_id: string | null }>(`SELECT hub_id FROM suppliers WHERE id = $1`, [
-          supplier.id,
-        ]);
-        hubId = supHub.rows[0]?.hub_id ?? null;
-        if (!hubId) {
-          const firstHub = await client.query<{ id: string }>(`SELECT id FROM collection_hubs LIMIT 1`);
-          hubId = firstHub.rows[0]?.id ?? null;
-        }
+        const firstHub = await client.query<{ id: string }>(
+          `SELECT id FROM collection_hubs WHERE status = 'ACTIVE' ORDER BY created_at, id LIMIT 1`,
+        );
+        hubId = firstHub.rows[0]?.id ?? null;
       }
 
       const countRes = await client.query<{ count: string }>(`SELECT count(*)::text as count FROM pickup_tasks`);
