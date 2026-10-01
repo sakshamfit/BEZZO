@@ -702,3 +702,17 @@ curl -s -X POST localhost:4000/api/v1/applications -H 'content-type: application
 Note for local development: do **not** run `npm run build --workspace=@bezzo/web` while `next dev`
 is running — both write `.next`, and the dev server starts returning 500 for every route until it is
 restarted. Stop the dev server (or use a separate build directory) first.
+
+## 9. Real APK continuation (2026-10-01)
+
+- Fixed supplier fulfillment dispatch querying the nonexistent `suppliers.hub_id`; it now chooses an
+  active collection hub when a fulfillment has no assigned hub (`e1c1a01`).
+- CI run `36869831555` passed: PostgreSQL migrations/invariants and all authenticated API integration
+  scenarios, web/API/package checks, API container image build, Flutter analyze/tests, and Android
+  debug APK build. CI artifact `bezzo-android-showcase-apks` is a debug/showcase build, not a signed
+  production APK and does not prove connection to a deployed BEZZO API.
+- Production connected APK is still blocked on a public HTTPS BEZZO API deployment URL and Android
+  release signing credentials. API deployment also needs operator-managed production secrets and
+  external provider credentials. Do not embed Supabase service-role or database credentials in mobile.
+- Never repeat the database password disclosed in chat; rotate it before any production use. The
+  production Supabase database was not modified by this work.
