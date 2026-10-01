@@ -1171,12 +1171,12 @@ export class SuppliersService {
       `SELECT fi.id,
               fi.order_item_id,
               oi.product_id,
-              coalesce(oi.product_name, p.name) AS product_name,
+              coalesce(oi.product_name_snapshot, p.name) AS product_name,
               coalesce(p.dosage_form, 'TABLET') AS dosage_form,
               p.pack_size,
               p.sku,
-              oi.batch_number,
-              oi.expiry_date,
+              i.batch_number,
+              i.expiry_date,
               oi.unit_price,
               fi.quantity,
               oi.line_total,
@@ -1185,6 +1185,7 @@ export class SuppliersService {
          FROM fulfillment_items fi
          JOIN order_items oi ON oi.id = fi.order_item_id
          LEFT JOIN products p ON p.id = oi.product_id
+         LEFT JOIN inventories i ON i.supplier_listing_id = oi.supplier_listing_id
         WHERE fi.fulfillment_id = $1
         ORDER BY fi.created_at ASC`,
       [fulfillmentId],
@@ -1763,11 +1764,8 @@ export class SuppliersService {
         `UPDATE inventory_reservations
             SET status = $2, released_at = now(), release_reason = $3, updated_at = now()
           WHERE order_id = $1
-            AND inventory_id IN (
-              SELECT oi.inventory_id
-                FROM fulfillment_items fi
-                JOIN order_items oi ON oi.id = fi.order_item_id
-               WHERE fi.fulfillment_id = $4
+            AND order_item_id IN (
+              SELECT order_item_id FROM fulfillment_items WHERE fulfillment_id = $4
             )
             AND status IN ($5, $6)
          RETURNING inventory_id, quantity`,

@@ -19,13 +19,15 @@ Status vocabulary (as required by the brief):
   successfully; the workflow does not publish it. Docker is not installed on this workstation. No image
   was deployed and no Supabase data was changed. `docs/api-deployment.md` covers TLS CA mounting,
   runtime configuration, database precautions, and the Flutter release command.
-- **CI integration defects found and corrected; awaiting rerun:** supplier fulfillment SQL referenced
-  buyer columns absent from the actual schema. It now uses `store_name`/`business_name`,
-  `license_reference`, and the buyer user's phone. The RBAC test still expected the implemented picker
-  route to be absent; password-reset tests used passwords blocked by the real policy; the refresh-cookie
-  test used a session token revoked by rotation. Corresponding code/test changes are present locally for
-  the next CI run. Earlier PostgreSQL integration job had 5 failed assertions across 4 suites (22/27
-  passed); this is not yet a green full workflow.
+- **CI integration defects found and corrected; awaiting rerun:** the first pass exposed wrong buyer
+  columns in supplier fulfillment reads; these now use `store_name`/`business_name`,
+  `license_reference`, and the buyer user's phone. It also exposed stale picker-route expectations,
+  password-reset test passwords explicitly rejected by the policy, and a refresh-cookie test that used
+  the session token revoked by rotation; those fixtures now match the implemented behavior. A second
+  pass reduced integration failures from 5 to 2 and exposed more wrong order-item columns. Fulfillment
+  reads now use `product_name_snapshot` and join the listing inventory for batch/expiry; rejection now
+  selects reservations by `order_item_id`. These final query changes are pending the next CI run. API
+  typecheck passed locally; the full PostgreSQL integration suite has not passed yet.
 - **BLOCKED: a real-device APK:** the Flutter release build correctly requires
   `BEZZO_API_BASE_URL=https://…`; there is still no public BEZZO API endpoint to use. Supabase is the
   PostgreSQL database, not a deployed NestJS API. Building against `10.0.2.2` only works from an Android
