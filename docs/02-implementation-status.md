@@ -1,6 +1,6 @@
 # BEZZO — implementation status (living memory)
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-01
 **Branch:** `main`
 **Purpose:** this file is the project's memory. It records *what actually exists in code*, how it was
 verified, what is deliberately absent, and what comes next. It is updated at the end of every work
@@ -10,6 +10,28 @@ and has been exercised against the running stack.
 Status vocabulary (as required by the brief):
 **IMPLEMENTED** · **PARTIALLY IMPLEMENTED** · **MOCKED** · **NOT IMPLEMENTED** ·
 **REQUIRES CONFIGURATION** · **REQUIRES EXTERNAL CREDENTIALS**.
+
+### Real APK continuation (2026-10-01)
+
+- **IMPLEMENTED, awaiting CI validation:** added a multi-stage root `Dockerfile` for the NestJS API.
+  It compiles the shared workspace packages, emits a slim non-root runtime, excludes `.env` and local
+  secrets from the Docker context, and probes `/health/live`. CI now builds this image on PRs and pushes
+  to `main`; it does not publish the image. `docs/api-deployment.md` documents TLS CA mounting, runtime
+  config, database precautions, and the real Flutter release command.
+- **NOT LOCALLY VERIFIED:** Docker is not installed on this workstation, so image construction must be
+  confirmed by the new CI job. No image was deployed and no Supabase data was changed.
+- **BLOCKED: a real-device APK:** the Flutter release build correctly requires
+  `BEZZO_API_BASE_URL=https://…`; there is still no public BEZZO API endpoint to use. Supabase is the
+  PostgreSQL database, not a deployed NestJS API. Building against `10.0.2.2` only works from an Android
+  emulator, so that would not be a real-device APK.
+- **REQUIRES EXTERNAL CREDENTIALS / CONFIGURATION:** hosting for the API and a public HTTPS domain,
+  Redis, Razorpay live credentials, Resend verified sender, Twilio SMS sender, S3-compatible storage,
+  production JWT/OTP secrets, exact CORS origins, and an Android signing keystore. The current
+  production config intentionally fails startup without the live payment and OTP delivery providers.
+- **Next:** select/provide the HTTPS API host (or approve a specific hosting setup), enter provider
+  credentials directly in its secret manager, run migrations against the intended database after
+  reviewing the migration plan, provision buyer/supplier catalog data through authorized operations,
+  then build and install-test a signed release APK against that endpoint.
 
 ### Production-readiness continuation (2026-09-30)
 
