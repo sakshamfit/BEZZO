@@ -9,8 +9,10 @@ node_modules
 **/build
 **/dist
 apps/mobile/**
+!apps/mobile/
 !apps/mobile/package.json
 apps/web/**
+!apps/web/
 !apps/web/package.json
 coverage
 .turbo
