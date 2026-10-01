@@ -1040,7 +1040,8 @@ export class SuppliersService {
               f.total,
               f.package_count,
               (SELECT coalesce(sum(fi.quantity), 0)::text FROM fulfillment_items fi WHERE fi.fulfillment_id = f.id) AS item_count,
-              coalesce(b.trade_name, 'Retailer') AS buyer_trade_name,
+              coalesce(nullif(b.store_name, ''),
+                       nullif(b.business_name, ''), 'Retailer') AS buyer_trade_name,
               coalesce(o.shipping_address_snapshot->>'locality', '') AS delivery_locality,
               coalesce(o.shipping_address_snapshot->>'city', '') AS delivery_city,
               ds.name AS delivery_slot_name,
@@ -1126,9 +1127,10 @@ export class SuppliersService {
               f.total,
               f.package_count,
               b.id AS buyer_id,
-              coalesce(b.trade_name, 'Retailer') AS buyer_trade_name,
-              b.drug_licence_number AS buyer_drug_licence,
-              b.contact_phone AS buyer_phone,
+              coalesce(nullif(b.store_name, ''),
+                       nullif(b.business_name, ''), 'Retailer') AS buyer_trade_name,
+              b.license_reference AS buyer_drug_licence,
+              buyer_user.phone AS buyer_phone,
               o.shipping_address_snapshot AS shipping_address,
               ds.name AS delivery_slot_name,
               f.accepted_at,
@@ -1140,6 +1142,7 @@ export class SuppliersService {
          FROM fulfillments f
          JOIN orders o ON o.id = f.order_id
          LEFT JOIN buyers b ON b.id = o.buyer_id
+         LEFT JOIN users buyer_user ON buyer_user.id = b.user_id
          LEFT JOIN delivery_slots ds ON ds.id = o.delivery_slot_id
         WHERE f.id = $1 AND f.supplier_id = $2`,
       [fulfillmentId, supplier.id],

@@ -21,7 +21,6 @@ describe('web refresh credential cookie', () => {
     expect(login.setCookie).toContain('Path=/api/v1/auth');
     expect(login.setCookie).toContain('HttpOnly');
     expect(login.setCookie).toContain('SameSite=Lax');
-    const accessToken = (login.data as { accessToken: string }).accessToken;
     const cookiePair = login.setCookie!.split(';', 1)[0]!;
 
     const refreshed = await anonymous.post(
@@ -32,8 +31,11 @@ describe('web refresh credential cookie', () => {
     expect(refreshed.status).toBe(200);
     expect(refreshed.data).not.toHaveProperty('refreshToken');
     expect(refreshed.setCookie).toContain('bezzo_refresh=');
+    const refreshedAccessToken = (refreshed.data as { accessToken: string }).accessToken;
 
-    const logout = await new ApiClient(accessToken).post('/auth/logout', { allSessions: false });
+    const logout = await new ApiClient(refreshedAccessToken).post('/auth/logout', {
+      allSessions: false,
+    });
     expect(logout.status).toBe(204);
     expect(logout.setCookie).toContain('Max-Age=0');
   });

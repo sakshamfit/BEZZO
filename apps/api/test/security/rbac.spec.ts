@@ -20,10 +20,7 @@ jest.setTimeout(60_000);
 const ADMIN_ONLY = ['/admin/applications', '/admin/applications/summary'];
 const SUPPLIER_ONLY = ['/supplier/profile', '/supplier/listings', '/supplier/inventory', '/supplier/documents'];
 const BUYER_ONLY = ['/buyer/profile', '/buyer/addresses', '/buyer/documents', '/cart', '/orders'];
-// The picker API lands with Phase 7. Until then the honest assertion is that the routes are absent
-// (404) rather than open to everyone; the negative role checks below already apply to every other
-// surface, and this test flips to 403/200 the moment the module is registered.
-const PICKER_ROUTES_PENDING: string[] = ['/picker/tasks'];
+const PICKER_ONLY = ['/picker/tasks'];
 
 const DENIED = [401, 403];
 
@@ -53,7 +50,7 @@ describe('RBAC matrix', () => {
   });
 
   it('refuses every protected route without a token', async () => {
-    const probes = [...ADMIN_ONLY, ...SUPPLIER_ONLY, ...BUYER_ONLY, '/me', '/notifications'];
+    const probes = [...ADMIN_ONLY, ...SUPPLIER_ONLY, ...BUYER_ONLY, ...PICKER_ONLY, '/me', '/notifications'];
     for (const path of probes) {
       const response = await anonymous.get(path);
       expect([401, 403]).toContain(response.status);
@@ -102,12 +99,17 @@ describe('RBAC matrix', () => {
     }
   });
 
-  it('has not exposed picker surfaces before the picker module exists', async () => {
-    for (const path of PICKER_ROUTES_PENDING) {
-      for (const session of [buyer, supplier, picker]) {
+  it('keeps picker surfaces restricted to pickers', async () => {
+    for (const path of PICKER_ONLY) {
+      for (const [label, session] of [
+        ['buyer', buyer],
+        ['supplier', supplier],
+        ['admin', admin],
+      ] as Array<[string, Session]>) {
         const response = await session.client.get(path);
-        expect({ path, status: response.status }).toEqual({ path, status: 404 });
+        expect({ path, label, status: response.status }).toEqual({ path, label, status: 403 });
       }
+      expect((await picker.client.get(path)).status).toBe(200);
     }
   });
 

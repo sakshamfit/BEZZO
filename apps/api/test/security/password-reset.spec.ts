@@ -31,10 +31,10 @@ describe('password reset', () => {
     const registered = await client.post('/auth/register', {
       accountType: 'BUYER',
       email,
-      password: 'OldPassword123!',
+      password: 'OldAccess123!',
       displayName: 'Password Reset Test',
       acceptedTermsVersion: 'v1',
-      deviceType: 'android',
+      clientPlatform: 'android',
     });
     expect([200, 201]).toContain(registered.status);
 
@@ -54,19 +54,19 @@ describe('password reset', () => {
     const reset = await client.post('/auth/password/reset', {
       challengeId,
       code,
-      newPassword: 'NewPassword456!',
+      newPassword: 'NewAccess456!',
     });
     expect(reset.status).toBe(200);
     expect(reset.data).toMatchObject({ status: 'PASSWORD_RESET' });
 
     const oldPassword = await client.post('/auth/login', {
       identifier: email,
-      password: 'OldPassword123!',
+      password: 'OldAccess123!',
     });
     expect(oldPassword.status).toBe(401);
     const newPassword = await client.post('/auth/login', {
       identifier: email,
-      password: 'NewPassword456!',
+      password: 'NewAccess456!',
       deviceType: 'android',
     });
     expect(newPassword.status).toBe(200);

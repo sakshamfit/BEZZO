@@ -13,13 +13,19 @@ Status vocabulary (as required by the brief):
 
 ### Real APK continuation (2026-10-01)
 
-- **IMPLEMENTED, awaiting CI validation:** added a multi-stage root `Dockerfile` for the NestJS API.
-  It compiles the shared workspace packages, emits a slim non-root runtime, excludes `.env` and local
-  secrets from the Docker context, and probes `/health/live`. CI now builds this image on PRs and pushes
-  to `main`; it does not publish the image. `docs/api-deployment.md` documents TLS CA mounting, runtime
-  config, database precautions, and the real Flutter release command.
-- **NOT LOCALLY VERIFIED:** Docker is not installed on this workstation, so image construction must be
-  confirmed by the new CI job. No image was deployed and no Supabase data was changed.
+- **IMPLEMENTED / VERIFIED IN CI:** added a multi-stage root `Dockerfile` for the NestJS API. It
+  compiles the shared workspace packages, emits a non-root runtime, excludes `.env` and local secrets
+  from the Docker context, and probes `/health/live`. GitHub Actions run `36864759838` built the image
+  successfully; the workflow does not publish it. Docker is not installed on this workstation. No image
+  was deployed and no Supabase data was changed. `docs/api-deployment.md` covers TLS CA mounting,
+  runtime configuration, database precautions, and the Flutter release command.
+- **CI integration defects found and corrected; awaiting rerun:** supplier fulfillment SQL referenced
+  buyer columns absent from the actual schema. It now uses `store_name`/`business_name`,
+  `license_reference`, and the buyer user's phone. The RBAC test still expected the implemented picker
+  route to be absent; password-reset tests used passwords blocked by the real policy; the refresh-cookie
+  test used a session token revoked by rotation. Corresponding code/test changes are present locally for
+  the next CI run. Earlier PostgreSQL integration job had 5 failed assertions across 4 suites (22/27
+  passed); this is not yet a green full workflow.
 - **BLOCKED: a real-device APK:** the Flutter release build correctly requires
   `BEZZO_API_BASE_URL=https://…`; there is still no public BEZZO API endpoint to use. Supabase is the
   PostgreSQL database, not a deployed NestJS API. Building against `10.0.2.2` only works from an Android
