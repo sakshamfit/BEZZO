@@ -1172,7 +1172,7 @@ export class SuppliersService {
               fi.order_item_id,
               oi.product_id,
               coalesce(oi.product_name_snapshot, p.name) AS product_name,
-              coalesce(p.dosage_form, 'TABLET') AS dosage_form,
+              coalesce(df.code, 'TABLET') AS dosage_form,
               p.pack_size,
               p.sku,
               i.batch_number,
@@ -1185,6 +1185,7 @@ export class SuppliersService {
          FROM fulfillment_items fi
          JOIN order_items oi ON oi.id = fi.order_item_id
          LEFT JOIN products p ON p.id = oi.product_id
+         LEFT JOIN dosage_forms df ON df.id = p.dosage_form_id
          LEFT JOIN inventories i ON i.supplier_listing_id = oi.supplier_listing_id
         WHERE fi.fulfillment_id = $1
         ORDER BY fi.created_at ASC`,
