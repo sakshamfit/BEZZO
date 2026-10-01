@@ -27,8 +27,8 @@ Status vocabulary (as required by the brief):
   pass reduced integration failures from 5 to 2 and exposed more wrong order-item columns. Fulfillment
   reads now use `product_name_snapshot`, the listing SKU, listing inventory batch/expiry, and the
   `dosage_forms` relation; rejection selects reservations by `order_item_id`. API typecheck passed
-  locally. The latest PostgreSQL run exposed one remaining invalid SKU column; the listing join fix is
-  pending CI. The full PostgreSQL integration suite has not passed yet.
+  locally. Latest PostgreSQL run exposed an invalid picker-name column in the fulfillment detail; it
+  now uses `users.display_name`. CI still needs to verify this change and the full suite has not passed.
 - **BLOCKED: a real-device APK:** the Flutter release build correctly requires
   `BEZZO_API_BASE_URL=https://…`; there is still no public BEZZO API endpoint to use. Supabase is the
   PostgreSQL database, not a deployed NestJS API. Building against `10.0.2.2` only works from an Android

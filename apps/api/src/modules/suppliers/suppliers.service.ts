@@ -1241,7 +1241,7 @@ export class SuppliersService {
     }>(
       `SELECT pt.id, pt.task_code, pt.status, pt.priority,
               pt.pickup_window_start, pt.pickup_window_end,
-              u.full_name AS picker_name, u.phone AS picker_phone,
+              u.display_name AS picker_name, u.phone AS picker_phone,
               pt.created_at
          FROM pickup_task_orders pto
          JOIN pickup_tasks pt ON pt.id = pto.pickup_task_id
