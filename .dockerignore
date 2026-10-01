@@ -8,10 +8,13 @@ node_modules
 **/node_modules
 **/build
 **/dist
-apps/mobile/*
-!apps/mobile/package.json
-apps/web/*
-!apps/web/package.json
+apps/mobile/.dart_tool
+apps/mobile/ios
+apps/mobile/macos
+apps/mobile/linux
+apps/mobile/windows
+apps/mobile/.idea
+apps/web/.next
 coverage
 .turbo
 .next
