@@ -1174,7 +1174,7 @@ export class SuppliersService {
               coalesce(oi.product_name_snapshot, p.name) AS product_name,
               coalesce(df.code, 'TABLET') AS dosage_form,
               p.pack_size,
-              p.sku,
+              listing.supplier_sku AS sku,
               i.batch_number,
               i.expiry_date,
               oi.unit_price,
@@ -1185,6 +1185,7 @@ export class SuppliersService {
          FROM fulfillment_items fi
          JOIN order_items oi ON oi.id = fi.order_item_id
          LEFT JOIN products p ON p.id = oi.product_id
+         LEFT JOIN supplier_product_listings listing ON listing.id = oi.supplier_listing_id
          LEFT JOIN dosage_forms df ON df.id = p.dosage_form_id
          LEFT JOIN inventories i ON i.supplier_listing_id = oi.supplier_listing_id
         WHERE fi.fulfillment_id = $1

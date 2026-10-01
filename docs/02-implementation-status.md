@@ -25,10 +25,10 @@ Status vocabulary (as required by the brief):
   password-reset test passwords explicitly rejected by the policy, and a refresh-cookie test that used
   the session token revoked by rotation; those fixtures now match the implemented behavior. A second
   pass reduced integration failures from 5 to 2 and exposed more wrong order-item columns. Fulfillment
-  reads now use `product_name_snapshot`, join the listing inventory for batch/expiry, and join
-  `dosage_forms` for the normalized dosage code; rejection now selects reservations by `order_item_id`.
-  API typecheck passed locally; these query changes are pending the next CI run. The full PostgreSQL
-  integration suite has not passed yet.
+  reads now use `product_name_snapshot`, the listing SKU, listing inventory batch/expiry, and the
+  `dosage_forms` relation; rejection selects reservations by `order_item_id`. API typecheck passed
+  locally. The latest PostgreSQL run exposed one remaining invalid SKU column; the listing join fix is
+  pending CI. The full PostgreSQL integration suite has not passed yet.
 - **BLOCKED: a real-device APK:** the Flutter release build correctly requires
   `BEZZO_API_BASE_URL=https://…`; there is still no public BEZZO API endpoint to use. Supabase is the
   PostgreSQL database, not a deployed NestJS API. Building against `10.0.2.2` only works from an Android
