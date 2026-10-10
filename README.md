@@ -6,7 +6,7 @@ The repository includes a Flutter buyer app in `apps/mobile` with an API-backed 
 
 | Document | What it is |
 | --- | --- |
-| `MEMORY.md` | **Session handoff**: where the work stands, how to rebuild the environment, how to verify, traps, next slice. Start here. |
+| `MEMORY.md` | **Session handoff**: where the  work stands, how to rebuild the environment, how to verify, traps, next slice. Start here. |
 | `docs/02-implementation-status.md` | Living status: phase-by-phase progress, known gaps, required decisions, evidence. |
 | `docs/01-local-development.md` | Local setup, database, servers, integration tests. |
 | `docs/00-repository-assessment.md` | First-pass assessment of the repository and the specs. |
